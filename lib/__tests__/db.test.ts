@@ -99,3 +99,19 @@ describe('getLeaderboard', () => {
     expect(rows.find(r => r.ticker === 'AAPL')).toBeUndefined();
   });
 });
+
+describe('getMentionDetails', () => {
+  it('returns mention details with channel and video info', () => {
+    const db = makeTestDb();
+    saveChannel(db, { id: 1, channelId: 'UC123', handle: '@test', name: 'Test Channel', weight: 0.5 });
+    const videoRowId = saveVideo(db, { videoId: 'vid1', channelId: 'UC123', title: 'My Video', publishedAt: new Date().toISOString() });
+    saveMention(db, { videoRowId, ticker: 'CRM', company: 'Salesforce', sentiment: 'bullish', conviction: 'high', quote: 'love this stock' });
+
+    const details = getMentionDetails(db);
+    expect(details).toHaveLength(1);
+    expect(details[0].ticker).toBe('CRM');
+    expect(details[0].channel_name).toBe('Test Channel');
+    expect(details[0].video_title).toBe('My Video');
+    expect(details[0].quote).toBe('love this stock');
+  });
+});
