@@ -30,7 +30,7 @@ export function parseExtractionResponse(raw: string): TickerMention[] {
 export async function extractTickers(transcript: string, videoTitle: string): Promise<TickerMention[]> {
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
+    max_tokens: 2048,
     system: `You are a stock research assistant. Extract every stock ticker the host is making a meaningful point about. Ignore casual market references. Resolve company names to tickers.
 
 Return strict JSON array:
@@ -53,7 +53,7 @@ Return only the JSON array, no other text.`,
     messages: [
       {
         role: 'user',
-        content: `Video title: ${videoTitle}\n\nTranscript:\n${transcript.slice(0, 8000)}`,
+        content: `Video title: ${videoTitle}\n\nTranscript:\n${transcript.slice(0, 60000)}`,
       },
     ],
   });
