@@ -208,8 +208,8 @@ export default function Page() {
                 <span className="text-gray-400 text-[10px]">ⓘ</span>
                 <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-64 bg-gray-900 text-white text-xs rounded-lg px-3 py-2.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg normal-case tracking-normal font-normal text-left leading-relaxed">
                   <p className="font-semibold mb-1">How score is calculated</p>
-                  <p className="text-gray-300">Sum of <span className="text-white">channel weight × conviction</span>, normalized so 100% = all channels at max conviction.</p>
-                  <p className="text-gray-400 mt-1.5">Royce Jakob = 20% weight, others = 13.3%</p>
+                  <p className="text-gray-300">Average conviction score across all mentions of this stock in the last 24h.</p>
+                  <p className="text-gray-400 mt-1.5">Conviction is 0–100% based on position size, price targets, certainty language, and depth of analysis.</p>
                 </div>
               </span>
               <span>Sentiment</span>

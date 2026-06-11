@@ -105,7 +105,7 @@ export function getLeaderboard(db: DatabaseType, channelName?: string): Leaderbo
       tm.company,
       COUNT(DISTINCT v.channel_id)  AS channel_count,
       COUNT(*)                       AS mention_count,
-      SUM(c.weight * (tm.conviction / 100.0)) AS weighted_score,
+      CAST(ROUND(AVG(tm.conviction)) AS INTEGER) AS weighted_score,
       GROUP_CONCAT(DISTINCT c.name)  AS channels
     FROM ticker_mentions tm
     JOIN videos v   ON tm.video_id  = v.id

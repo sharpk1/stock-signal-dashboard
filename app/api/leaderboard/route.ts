@@ -1,8 +1,5 @@
 import { NextResponse } from 'next/server';
 import { getDb, getLeaderboard, getMentionDetails, type LeaderboardRow, type MentionDetail } from '@/lib/db';
-import { CHANNELS } from '@/lib/channels';
-
-const MAX_SCORE = CHANNELS.reduce((sum, c) => sum + c.weight, 0);
 
 export interface LeaderboardEntry extends LeaderboardRow {
   details: MentionDetail[];
@@ -25,7 +22,7 @@ export async function GET(request: Request) {
   const entries: LeaderboardEntry[] = rows.map(row => ({
     ...row,
     details: detailsByTicker[row.ticker] ?? [],
-    normalized_score: Math.min(100, Math.round((row.weighted_score / MAX_SCORE) * 100)),
+    normalized_score: row.weighted_score,
   }));
 
   return NextResponse.json(entries);
