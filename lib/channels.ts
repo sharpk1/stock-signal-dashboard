@@ -15,14 +15,6 @@ export const CHANNELS: Channel[] = [
     weight: 0.133,
   },
   {
-    id: 2,
-    channelId: "UCnMn36GT_H0X-w5_ckLtlgQ",
-    // Note: @jeremylefebvremakesmoney7934 resolves to the same channelId as @FinancialEducation
-    handle: "@jeremylefebvremakesmoney7934",
-    name: "Jeremy Lefebvre",
-    weight: 0.133,
-  },
-  {
     id: 3,
     channelId: "UCWbHt74zrW8sd3XqFABMXDw",
     handle: "@DumbMoneyLive",
