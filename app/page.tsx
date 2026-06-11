@@ -158,7 +158,7 @@ export default function Page() {
               <span className="relative group flex items-center justify-center gap-1 cursor-default">
                 Score
                 <span className="text-gray-300 text-[10px]">ⓘ</span>
-                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-60 bg-gray-900 text-white text-xs rounded-lg px-3 py-2.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg normal-case tracking-normal font-normal text-left leading-relaxed">
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-60 bg-gray-900 text-white text-xs rounded-lg px-3 py-2.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg normal-case tracking-normal font-normal text-left leading-relaxed">
                   <p className="font-semibold mb-1">How score is calculated</p>
                   <p className="text-gray-300">Sum of <span className="text-white">channel weight × conviction</span> for every mention.</p>
                   <p className="text-gray-400 mt-1.5">Conviction: high = 100%, medium = 60%, low = 30%</p>
