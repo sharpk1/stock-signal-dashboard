@@ -96,7 +96,9 @@ export interface LeaderboardRow {
   channels: string;
 }
 
-export function getLeaderboard(db: DatabaseType): LeaderboardRow[] {
+export function getLeaderboard(db: DatabaseType, channelName?: string): LeaderboardRow[] {
+  const channelFilter = channelName ? 'AND c.name = ?' : '';
+  const params = channelName ? [channelName] : [];
   return db.prepare(`
     SELECT
       tm.ticker,
@@ -113,9 +115,10 @@ export function getLeaderboard(db: DatabaseType): LeaderboardRow[] {
     JOIN videos v   ON tm.video_id  = v.id
     JOIN channels c ON v.channel_id = c.channel_id
     WHERE rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-24 hours')
+    ${channelFilter}
     GROUP BY tm.ticker
     ORDER BY weighted_score DESC
-  `).all() as LeaderboardRow[];
+  `).all(...params) as LeaderboardRow[];
 }
 
 export interface MentionDetail {
@@ -128,7 +131,9 @@ export interface MentionDetail {
   video_id: string;
 }
 
-export function getMentionDetails(db: DatabaseType): MentionDetail[] {
+export function getMentionDetails(db: DatabaseType, channelName?: string): MentionDetail[] {
+  const channelFilter = channelName ? 'AND c.name = ?' : '';
+  const params = channelName ? [channelName] : [];
   return db.prepare(`
     SELECT
       tm.ticker,
@@ -142,6 +147,7 @@ export function getMentionDetails(db: DatabaseType): MentionDetail[] {
     JOIN videos v   ON tm.video_id  = v.id
     JOIN channels c ON v.channel_id = c.channel_id
     WHERE rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-24 hours')
+    ${channelFilter}
     ORDER BY tm.ticker, c.weight DESC
-  `).all() as MentionDetail[];
+  `).all(...params) as MentionDetail[];
 }

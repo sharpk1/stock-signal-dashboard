@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import React from 'react';
 import type { LeaderboardEntry } from '@/app/api/leaderboard/route';
+import { CHANNELS } from '@/lib/channels';
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
   const styles: Record<string, string> = {
@@ -35,11 +36,13 @@ export default function Page() {
   const [lastFetched, setLastFetched] = useState<string | null>(null);
   const [fetchResult, setFetchResult] = useState<{ videosProcessed: number; tickersFound: number; errors: string[] } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
 
-  const loadLeaderboard = useCallback(async () => {
+  const loadLeaderboard = useCallback(async (channel?: string | null) => {
     setLoading(true);
     try {
-      const res = await fetch('/api/leaderboard');
+      const url = channel ? `/api/leaderboard?channel=${encodeURIComponent(channel)}` : '/api/leaderboard';
+      const res = await fetch(url);
       const data = await res.json();
       setEntries(data);
     } finally {
@@ -47,7 +50,13 @@ export default function Page() {
     }
   }, []);
 
-  useEffect(() => { loadLeaderboard(); }, [loadLeaderboard]);
+  function handleChannelFilter(channel: string | null) {
+    setSelectedChannel(channel);
+    setExpanded(null);
+    loadLeaderboard(channel);
+  }
+
+  useEffect(() => { loadLeaderboard(null); }, [loadLeaderboard]);
 
   async function handleFetch() {
     setFetching(true);
@@ -57,7 +66,7 @@ export default function Page() {
       const data = await res.json();
       setFetchResult(data);
       setLastFetched(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
-      await loadLeaderboard();
+      await loadLeaderboard(selectedChannel);
     } finally {
       setFetching(false);
     }
@@ -129,6 +138,33 @@ export default function Page() {
             </div>
           </div>
         )}
+
+        {/* Channel filter pills */}
+        <div className="flex flex-wrap gap-2 mb-5">
+          <button
+            onClick={() => handleChannelFilter(null)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              selectedChannel === null
+                ? 'bg-blue-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
+            }`}
+          >
+            All Channels
+          </button>
+          {CHANNELS.map(ch => (
+            <button
+              key={ch.id}
+              onClick={() => handleChannelFilter(ch.name)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                selectedChannel === ch.name
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
+              }`}
+            >
+              {ch.name}
+            </button>
+          ))}
+        </div>
 
         {/* Main content */}
         {loading ? (
