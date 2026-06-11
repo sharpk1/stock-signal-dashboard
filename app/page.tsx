@@ -7,12 +7,12 @@ import { CHANNELS } from '@/lib/channels';
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
   const styles: Record<string, string> = {
-    bullish: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
-    bearish: 'bg-red-100 text-red-700 ring-1 ring-red-200',
-    neutral: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200',
+    bullish: 'bg-emerald-50 text-emerald-800 border border-emerald-300',
+    bearish: 'bg-red-50 text-red-800 border border-red-300',
+    neutral: 'bg-gray-100 text-gray-700 border border-gray-300',
   };
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[sentiment] ?? styles.neutral}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${styles[sentiment] ?? styles.neutral}`}>
       {sentiment}
     </span>
   );
@@ -20,17 +20,24 @@ function SentimentBadge({ sentiment }: { sentiment: string }) {
 
 function ConvictionBadge({ conviction }: { conviction: number }) {
   const [color, label] =
-    conviction >= 90 ? ['bg-emerald-100 text-emerald-700', 'Max'] :
-    conviction >= 75 ? ['bg-emerald-100 text-emerald-700', 'High'] :
-    conviction >= 50 ? ['bg-blue-100 text-blue-700', 'Medium'] :
-    conviction >= 25 ? ['bg-amber-100 text-amber-700', 'Low'] :
-    ['bg-gray-100 text-gray-500', 'Weak'];
+    conviction >= 90 ? ['bg-emerald-50 text-emerald-800 border border-emerald-300', 'Max'] :
+    conviction >= 75 ? ['bg-emerald-50 text-emerald-800 border border-emerald-300', 'High'] :
+    conviction >= 50 ? ['bg-blue-50 text-blue-800 border border-blue-300', 'Medium'] :
+    conviction >= 25 ? ['bg-amber-50 text-amber-800 border border-amber-300', 'Low'] :
+    ['bg-gray-100 text-gray-600 border border-gray-300', 'Weak'];
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
-      {label} <span className="opacity-70">{conviction}%</span>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${color}`}>
+      {label} <span className="opacity-60">{conviction}%</span>
     </span>
   );
 }
+
+function formatFetchedAt(dateStr: string): string {
+  const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z');
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+const QUOTE_TRUNCATE = 120;
 
 export default function Page() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -40,6 +47,7 @@ export default function Page() {
   const [fetchResult, setFetchResult] = useState<{ videosProcessed: number; tickersFound: number; errors: string[] } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
+  const [modalQuote, setModalQuote] = useState<string | null>(null);
 
   const loadLeaderboard = useCallback(async (channel?: string | null) => {
     setLoading(true);
@@ -124,7 +132,7 @@ export default function Page() {
       <main className="max-w-6xl mx-auto px-6 py-8">
         {/* Fetch result banner */}
         {fetchResult && (
-          <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-white border border-gray-200 shadow-sm text-sm">
+          <div className="mb-5 flex items-start gap-3 p-4 rounded-xl bg-white border border-gray-200 shadow-sm text-sm">
             <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
             <div>
               <span className="text-gray-700">
@@ -143,7 +151,7 @@ export default function Page() {
         )}
 
         {/* Channel filter pills */}
-        <div className="flex flex-wrap gap-2 mb-5">
+        <div className="flex flex-wrap gap-2 mb-3">
           <button
             onClick={() => handleChannelFilter(null)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
@@ -182,26 +190,26 @@ export default function Page() {
           <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
             <div className="w-14 h-14 rounded-2xl bg-white border border-gray-200 shadow-sm flex items-center justify-center text-2xl">📡</div>
             <div>
-              <p className="text-gray-700 font-medium">No signals yet</p>
-              <p className="text-gray-400 text-sm mt-1">Hit <span className="text-blue-600 font-medium">Fetch Latest</span> to pull today&apos;s data from YouTube</p>
+              <p className="text-gray-800 font-medium">No signals yet</p>
+              <p className="text-gray-500 text-sm mt-1">Hit <span className="text-blue-600 font-medium">Fetch Latest</span> to pull today&apos;s data from YouTube</p>
             </div>
           </div>
         ) : (
           <div className="rounded-xl border border-gray-200 overflow-hidden shadow-sm bg-white">
             {/* Table header */}
-            <div className="grid grid-cols-[2fr_2.5fr_1fr_1fr_1fr_1.5fr] text-xs font-medium text-gray-400 uppercase tracking-wider px-5 py-3 bg-gray-50 border-b border-gray-200">
+            <div className="grid grid-cols-[28px_2fr_2.5fr_1fr_1fr_1fr_1.5fr] text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3 bg-gray-50 border-b border-gray-200">
+              <span>#</span>
               <span>Ticker</span>
               <span>Company</span>
               <span className="text-center">Channels</span>
               <span className="text-center">Mentions</span>
               <span className="relative group flex items-center justify-center gap-1 cursor-default">
                 Score
-                <span className="text-gray-300 text-[10px]">ⓘ</span>
-                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-60 bg-gray-900 text-white text-xs rounded-lg px-3 py-2.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg normal-case tracking-normal font-normal text-left leading-relaxed">
+                <span className="text-gray-400 text-[10px]">ⓘ</span>
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-64 bg-gray-900 text-white text-xs rounded-lg px-3 py-2.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg normal-case tracking-normal font-normal text-left leading-relaxed">
                   <p className="font-semibold mb-1">How score is calculated</p>
-                  <p className="text-gray-300">Sum of <span className="text-white">channel weight × conviction score</span> for every mention.</p>
-                  <p className="text-gray-400 mt-1.5">Conviction: 0–100% based on position size, price targets, certainty language, and depth of analysis.</p>
-                  <p className="text-gray-400 mt-0.5">Royce Jakob = 20% weight, others = 13.3%</p>
+                  <p className="text-gray-300">Sum of <span className="text-white">channel weight × conviction</span>, normalized so 100% = all channels at max conviction.</p>
+                  <p className="text-gray-400 mt-1.5">Royce Jakob = 20% weight, others = 13.3%</p>
                 </div>
               </span>
               <span>Sentiment</span>
@@ -209,7 +217,7 @@ export default function Page() {
 
             {/* Rows */}
             <div className="divide-y divide-gray-100">
-              {entries.map((entry) => {
+              {entries.map((entry, index) => {
                 const isExpanded = expanded === entry.ticker;
                 const sentiment = topSentiment(entry);
 
@@ -217,44 +225,51 @@ export default function Page() {
                   <React.Fragment key={entry.ticker}>
                     <div
                       onClick={() => setExpanded(isExpanded ? null : entry.ticker)}
-                      className={`grid grid-cols-[2fr_2.5fr_1fr_1fr_1fr_1.5fr] px-5 py-4 cursor-pointer transition-colors items-center
+                      className={`grid grid-cols-[28px_2fr_2.5fr_1fr_1fr_1fr_1.5fr] px-5 py-4 cursor-pointer transition-colors items-center
                         ${isExpanded ? 'bg-blue-50' : 'bg-white hover:bg-gray-50'}`}
                     >
+                      <span className="text-gray-400 text-xs font-medium">{index + 1}</span>
                       <span className="font-mono font-bold text-blue-600 tracking-wide text-sm">{entry.ticker}</span>
-                      <span className="text-gray-700 text-sm truncate pr-4">{entry.company ?? '—'}</span>
-                      <span className="text-center text-gray-500 text-sm">{entry.channel_count}</span>
-                      <span className="text-center text-gray-500 text-sm">{entry.mention_count}</span>
-                      <span className="text-center font-semibold text-gray-900 text-sm">{Math.round(entry.weighted_score * 100)}%</span>
+                      <span className="text-gray-800 text-sm truncate pr-4">{entry.company ?? '—'}</span>
+                      <span className="text-center text-gray-600 text-sm font-medium">{entry.channel_count}</span>
+                      <span className="text-center text-gray-600 text-sm font-medium">{entry.mention_count}</span>
+                      <span className="text-center font-bold text-gray-900 text-sm">{entry.normalized_score}%</span>
                       <SentimentBadge sentiment={sentiment} />
                     </div>
 
                     {isExpanded && entry.details.length > 0 && (
-                      <div className="bg-blue-50/50 border-t border-blue-100 px-5 py-4">
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-[160px_1fr_100px_120px] gap-4 text-xs font-medium text-gray-400 uppercase tracking-wider pb-1">
+                      <div className="bg-slate-50 border-t border-slate-200 px-5 py-4">
+                        <div className="space-y-0">
+                          <div className="grid grid-cols-[160px_1fr_auto_auto] gap-x-4 text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 border-b border-slate-200">
                             <span>Channel</span>
                             <span>Video</span>
                             <span>Sentiment</span>
-                            <span>Conviction Score</span>
+                            <span>Conviction</span>
                           </div>
                           {entry.details.map((d, j) => (
-                            <div key={j} className="grid grid-cols-[160px_1fr_100px_120px] gap-4 text-sm items-center">
-                              <span className="text-gray-700 font-medium truncate">{d.channel_name}</span>
-                              <span className="text-gray-400 truncate text-xs">{d.video_title}</span>
+                            <div key={j} className="grid grid-cols-[160px_1fr_auto_auto] gap-x-4 items-start py-3 border-b border-slate-100 last:border-0">
+                              <span className="text-gray-800 font-semibold text-sm truncate pt-0.5">{d.channel_name}</span>
+                              <div className="flex flex-col gap-0.5 min-w-0">
+                                <span className="text-gray-700 text-sm font-medium truncate">{d.video_title}</span>
+                                <span className="text-gray-400 text-[11px]">Fetched {formatFetchedAt(d.fetched_at)}</span>
+                                {d.quote && (
+                                  <span className="text-gray-600 text-[12px] italic leading-relaxed mt-0.5">
+                                    &ldquo;{d.quote.length > QUOTE_TRUNCATE ? d.quote.slice(0, QUOTE_TRUNCATE) + '…' : d.quote}&rdquo;
+                                    {d.quote.length > QUOTE_TRUNCATE && (
+                                      <button
+                                        onClick={e => { e.stopPropagation(); setModalQuote(d.quote!); }}
+                                        className="ml-1.5 text-blue-600 not-italic font-medium hover:underline"
+                                      >
+                                        read more
+                                      </button>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
                               <SentimentBadge sentiment={d.sentiment} />
                               <ConvictionBadge conviction={d.conviction} />
                             </div>
                           ))}
-                          {entry.details.some(d => d.quote) && (
-                            <div className="mt-3 pt-3 border-t border-blue-100 space-y-1.5">
-                              {entry.details.filter(d => d.quote).map((d, j) => (
-                                <p key={j} className="text-xs text-gray-500 italic">
-                                  <span className="text-gray-400 not-italic font-medium">{d.channel_name}: </span>
-                                  &ldquo;{d.quote}&rdquo;
-                                </p>
-                              ))}
-                            </div>
-                          )}
                         </div>
                       </div>
                     )}
@@ -265,6 +280,27 @@ export default function Page() {
           </div>
         )}
       </main>
+
+      {/* Quote modal */}
+      {modalQuote && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4"
+          onClick={() => setModalQuote(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl p-6 max-w-lg w-full"
+            onClick={e => e.stopPropagation()}
+          >
+            <p className="text-gray-800 text-sm italic leading-relaxed">&ldquo;{modalQuote}&rdquo;</p>
+            <button
+              onClick={() => setModalQuote(null)}
+              className="mt-5 text-xs text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

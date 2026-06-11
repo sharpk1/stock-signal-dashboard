@@ -125,6 +125,7 @@ export interface MentionDetail {
   channel_name: string;
   video_title: string;
   video_id: string;
+  fetched_at: string;
 }
 
 export function getMentionDetails(db: DatabaseType, channelName?: string): MentionDetail[] {
@@ -138,7 +139,8 @@ export function getMentionDetails(db: DatabaseType, channelName?: string): Menti
       tm.quote,
       c.name      AS channel_name,
       v.title     AS video_title,
-      v.video_id
+      v.video_id,
+      v.fetched_at
     FROM ticker_mentions tm
     JOIN videos v   ON tm.video_id  = v.id
     JOIN channels c ON v.channel_id = c.channel_id
