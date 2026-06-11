@@ -155,7 +155,16 @@ export default function Page() {
               <span>Company</span>
               <span className="text-center">Channels</span>
               <span className="text-center">Mentions</span>
-              <span className="text-center">Score</span>
+              <span className="relative group flex items-center justify-center gap-1 cursor-default">
+                Score
+                <span className="text-gray-300 text-[10px]">ⓘ</span>
+                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-60 bg-gray-900 text-white text-xs rounded-lg px-3 py-2.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg normal-case tracking-normal font-normal text-left leading-relaxed">
+                  <p className="font-semibold mb-1">How score is calculated</p>
+                  <p className="text-gray-300">Sum of <span className="text-white">channel weight × conviction</span> for every mention.</p>
+                  <p className="text-gray-400 mt-1.5">Conviction: high = 100%, medium = 60%, low = 30%</p>
+                  <p className="text-gray-400 mt-0.5">Royce Jakob = 20% weight, others = 13.3%</p>
+                </div>
+              </span>
               <span>Sentiment</span>
             </div>
 
@@ -176,7 +185,7 @@ export default function Page() {
                       <span className="text-gray-700 text-sm truncate pr-4">{entry.company ?? '—'}</span>
                       <span className="text-center text-gray-500 text-sm">{entry.channel_count}</span>
                       <span className="text-center text-gray-500 text-sm">{entry.mention_count}</span>
-                      <span className="text-center font-semibold text-gray-900 text-sm">{entry.weighted_score.toFixed(2)}</span>
+                      <span className="text-center font-semibold text-gray-900 text-sm">{Math.round(entry.weighted_score * 100)}%</span>
                       <SentimentBadge sentiment={sentiment} />
                     </div>
 
