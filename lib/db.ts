@@ -40,7 +40,8 @@ export function initDb(db: DatabaseType): void {
       sentiment  TEXT CHECK(sentiment IN ('bullish','bearish','neutral')),
       conviction TEXT CHECK(conviction IN ('high','medium','low')),
       quote      TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(video_id, ticker)
     );
   `);
 }
@@ -81,7 +82,7 @@ export function saveMention(
   }
 ): void {
   db.prepare(`
-    INSERT INTO ticker_mentions (video_id, ticker, company, sentiment, conviction, quote)
+    INSERT OR IGNORE INTO ticker_mentions (video_id, ticker, company, sentiment, conviction, quote)
     VALUES (@videoRowId, @ticker, @company, @sentiment, @conviction, @quote)
   `).run(mention);
 }
