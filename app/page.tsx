@@ -73,21 +73,21 @@ export default function Page() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
       {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-10">
+      <header className="border-b border-gray-200 bg-white sticky top-0 z-10 shadow-sm">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg bg-blue-500 flex items-center justify-center text-xs font-bold">S</div>
-            <span className="font-semibold text-slate-100 tracking-tight">Stock Signals</span>
+            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-xs font-bold text-white">S</div>
+            <span className="font-semibold text-gray-900 tracking-tight">Stock Signals</span>
             {lastFetched && (
-              <span className="text-xs text-slate-500 hidden sm:block">· Updated {lastFetched}</span>
+              <span className="text-xs text-gray-400 hidden sm:block">· Updated {lastFetched}</span>
             )}
           </div>
           <button
             onClick={handleFetch}
             disabled={fetching}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             {fetching ? (
               <>
@@ -112,16 +112,16 @@ export default function Page() {
       <main className="max-w-6xl mx-auto px-6 py-8">
         {/* Fetch result banner */}
         {fetchResult && (
-          <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-slate-800/60 border border-slate-700 text-sm">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+          <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-white border border-gray-200 shadow-sm text-sm">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
             <div>
-              <span className="text-slate-200">
-                Processed <span className="font-semibold text-white">{fetchResult.videosProcessed}</span> videos &mdash; found <span className="font-semibold text-white">{fetchResult.tickersFound}</span> ticker mentions
+              <span className="text-gray-700">
+                Processed <span className="font-semibold text-gray-900">{fetchResult.videosProcessed}</span> videos &mdash; found <span className="font-semibold text-gray-900">{fetchResult.tickersFound}</span> ticker mentions
               </span>
               {fetchResult.errors.length > 0 && (
                 <details className="mt-2">
-                  <summary className="text-amber-400 cursor-pointer text-xs">{fetchResult.errors.length} channel warnings</summary>
-                  <ul className="mt-1 text-amber-300/70 text-xs space-y-0.5 list-disc list-inside">
+                  <summary className="text-amber-600 cursor-pointer text-xs">{fetchResult.errors.length} channel warnings</summary>
+                  <ul className="mt-1 text-amber-500 text-xs space-y-0.5 list-disc list-inside">
                     {fetchResult.errors.map((e, i) => <li key={i}>{e}</li>)}
                   </ul>
                 </details>
@@ -137,20 +137,20 @@ export default function Page() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
             </svg>
-            <span className="text-slate-500 text-sm">Loading signals…</span>
+            <span className="text-gray-400 text-sm">Loading signals…</span>
           </div>
         ) : entries.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center text-2xl">📡</div>
+            <div className="w-14 h-14 rounded-2xl bg-white border border-gray-200 shadow-sm flex items-center justify-center text-2xl">📡</div>
             <div>
-              <p className="text-slate-300 font-medium">No signals yet</p>
-              <p className="text-slate-500 text-sm mt-1">Hit <span className="text-blue-400 font-medium">Fetch Latest</span> to pull today&apos;s data from YouTube</p>
+              <p className="text-gray-700 font-medium">No signals yet</p>
+              <p className="text-gray-400 text-sm mt-1">Hit <span className="text-blue-600 font-medium">Fetch Latest</span> to pull today&apos;s data from YouTube</p>
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border border-slate-800 overflow-hidden">
+          <div className="rounded-xl border border-gray-200 overflow-hidden shadow-sm bg-white">
             {/* Table header */}
-            <div className="grid grid-cols-[2fr_2.5fr_1fr_1fr_1fr_1.5fr] text-xs font-medium text-slate-500 uppercase tracking-wider px-5 py-3 bg-slate-900 border-b border-slate-800">
+            <div className="grid grid-cols-[2fr_2.5fr_1fr_1fr_1fr_1.5fr] text-xs font-medium text-gray-400 uppercase tracking-wider px-5 py-3 bg-gray-50 border-b border-gray-200">
               <span>Ticker</span>
               <span>Company</span>
               <span className="text-center">Channels</span>
@@ -160,7 +160,7 @@ export default function Page() {
             </div>
 
             {/* Rows */}
-            <div className="divide-y divide-slate-800/60">
+            <div className="divide-y divide-gray-100">
               {entries.map((entry) => {
                 const isExpanded = expanded === entry.ticker;
                 const sentiment = topSentiment(entry);
@@ -170,32 +170,32 @@ export default function Page() {
                     <div
                       onClick={() => setExpanded(isExpanded ? null : entry.ticker)}
                       className={`grid grid-cols-[2fr_2.5fr_1fr_1fr_1fr_1.5fr] px-5 py-4 cursor-pointer transition-colors items-center
-                        ${isExpanded ? 'bg-slate-800/80' : 'bg-slate-950 hover:bg-slate-900'}`}
+                        ${isExpanded ? 'bg-blue-50' : 'bg-white hover:bg-gray-50'}`}
                     >
-                      <span className="font-mono font-bold text-blue-400 tracking-wide text-sm">{entry.ticker}</span>
-                      <span className="text-slate-300 text-sm truncate pr-4">{entry.company ?? '—'}</span>
-                      <span className="text-center text-slate-400 text-sm">{entry.channel_count}</span>
-                      <span className="text-center text-slate-400 text-sm">{entry.mention_count}</span>
-                      <span className="text-center font-semibold text-white text-sm">{entry.weighted_score.toFixed(2)}</span>
+                      <span className="font-mono font-bold text-blue-600 tracking-wide text-sm">{entry.ticker}</span>
+                      <span className="text-gray-700 text-sm truncate pr-4">{entry.company ?? '—'}</span>
+                      <span className="text-center text-gray-500 text-sm">{entry.channel_count}</span>
+                      <span className="text-center text-gray-500 text-sm">{entry.mention_count}</span>
+                      <span className="text-center font-semibold text-gray-900 text-sm">{entry.weighted_score.toFixed(2)}</span>
                       <SentimentBadge sentiment={sentiment} />
                     </div>
 
                     {isExpanded && entry.details.length > 0 && (
-                      <div className="bg-slate-900/60 border-t border-slate-800/50 px-5 py-4">
+                      <div className="bg-blue-50/50 border-t border-blue-100 px-5 py-4">
                         <div className="space-y-3">
                           {entry.details.map((d, j) => (
-                            <div key={j} className="grid grid-cols-[160px_1fr_100px_80px] gap-4 text-sm items-start">
-                              <span className="text-slate-300 font-medium truncate">{d.channel_name}</span>
-                              <span className="text-slate-500 truncate text-xs pt-0.5">{d.video_title}</span>
+                            <div key={j} className="grid grid-cols-[160px_1fr_100px_80px] gap-4 text-sm items-center">
+                              <span className="text-gray-700 font-medium truncate">{d.channel_name}</span>
+                              <span className="text-gray-400 truncate text-xs">{d.video_title}</span>
                               <SentimentBadge sentiment={d.sentiment} />
                               <ConvictionDot conviction={d.conviction} />
                             </div>
                           ))}
                           {entry.details.some(d => d.quote) && (
-                            <div className="mt-3 pt-3 border-t border-slate-800 space-y-1.5">
+                            <div className="mt-3 pt-3 border-t border-blue-100 space-y-1.5">
                               {entry.details.filter(d => d.quote).map((d, j) => (
-                                <p key={j} className="text-xs text-slate-400 italic">
-                                  <span className="text-slate-500 not-italic font-medium">{d.channel_name}: </span>
+                                <p key={j} className="text-xs text-gray-500 italic">
+                                  <span className="text-gray-400 not-italic font-medium">{d.channel_name}: </span>
                                   &ldquo;{d.quote}&rdquo;
                                 </p>
                               ))}
