@@ -4,9 +4,33 @@ import { useState, useEffect, useCallback } from 'react';
 import React from 'react';
 import type { LeaderboardEntry } from '@/app/api/leaderboard/route';
 
+function SentimentBadge({ sentiment }: { sentiment: string }) {
+  const styles: Record<string, string> = {
+    bullish: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
+    bearish: 'bg-red-100 text-red-700 ring-1 ring-red-200',
+    neutral: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200',
+  };
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[sentiment] ?? styles.neutral}`}>
+      {sentiment}
+    </span>
+  );
+}
+
+function ConvictionDot({ conviction }: { conviction: string }) {
+  const dots = { high: 3, medium: 2, low: 1 }[conviction] ?? 1;
+  return (
+    <span className="flex gap-0.5 items-center">
+      {[1, 2, 3].map(i => (
+        <span key={i} className={`w-1.5 h-1.5 rounded-full ${i <= dots ? 'bg-blue-500' : 'bg-gray-200'}`} />
+      ))}
+    </span>
+  );
+}
+
 export default function Page() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
   const [lastFetched, setLastFetched] = useState<string | null>(null);
   const [fetchResult, setFetchResult] = useState<{ videosProcessed: number; tickersFound: number; errors: string[] } | null>(null);
@@ -32,130 +56,161 @@ export default function Page() {
       const res = await fetch('/api/fetch', { method: 'POST' });
       const data = await res.json();
       setFetchResult(data);
-      setLastFetched(new Date().toLocaleString());
+      setLastFetched(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
       await loadLeaderboard();
     } finally {
       setFetching(false);
     }
   }
 
-  const sentimentColor = (s: string) => {
-    if (s === 'bullish') return 'text-green-600 font-medium';
-    if (s === 'bearish') return 'text-red-600 font-medium';
-    return 'text-gray-500';
-  };
+  function topSentiment(entry: LeaderboardEntry): string {
+    if (!entry.details.length) return 'neutral';
+    const counts = entry.details.reduce<Record<string, number>>((acc, d) => {
+      acc[d.sentiment] = (acc[d.sentiment] ?? 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'neutral';
+  }
 
   return (
-    <main className="max-w-5xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Stock Signal Dashboard</h1>
-          {lastFetched && (
-            <p className="text-sm text-gray-500 mt-1">Last fetched: {lastFetched}</p>
-          )}
+    <div className="min-h-screen bg-slate-950 text-white">
+      {/* Header */}
+      <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded-lg bg-blue-500 flex items-center justify-center text-xs font-bold">S</div>
+            <span className="font-semibold text-slate-100 tracking-tight">Stock Signals</span>
+            {lastFetched && (
+              <span className="text-xs text-slate-500 hidden sm:block">· Updated {lastFetched}</span>
+            )}
+          </div>
+          <button
+            onClick={handleFetch}
+            disabled={fetching}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            {fetching ? (
+              <>
+                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Fetching…
+              </>
+            ) : (
+              <>
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Fetch Latest
+              </>
+            )}
+          </button>
         </div>
-        <button
-          onClick={handleFetch}
-          disabled={fetching}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium px-4 py-2 rounded-lg transition-colors"
-        >
-          {fetching ? (
-            <>
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-              Fetching…
-            </>
-          ) : (
-            'Fetch Latest ▶'
-          )}
-        </button>
-      </div>
+      </header>
 
-      {fetchResult && (
-        <div className="mb-4 p-3 rounded-lg bg-gray-50 border border-gray-200 text-sm">
-          <span className="text-gray-700">
-            Processed <strong>{fetchResult.videosProcessed}</strong> videos, found <strong>{fetchResult.tickersFound}</strong> ticker mentions.
-          </span>
-          {fetchResult.errors.length > 0 && (
-            <details className="mt-1">
-              <summary className="text-yellow-700 cursor-pointer">{fetchResult.errors.length} warnings</summary>
-              <ul className="mt-1 text-yellow-600 list-disc list-inside">
-                {fetchResult.errors.map((e, i) => <li key={i}>{e}</li>)}
-              </ul>
-            </details>
-          )}
-        </div>
-      )}
+      <main className="max-w-6xl mx-auto px-6 py-8">
+        {/* Fetch result banner */}
+        {fetchResult && (
+          <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-slate-800/60 border border-slate-700 text-sm">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+            <div>
+              <span className="text-slate-200">
+                Processed <span className="font-semibold text-white">{fetchResult.videosProcessed}</span> videos &mdash; found <span className="font-semibold text-white">{fetchResult.tickersFound}</span> ticker mentions
+              </span>
+              {fetchResult.errors.length > 0 && (
+                <details className="mt-2">
+                  <summary className="text-amber-400 cursor-pointer text-xs">{fetchResult.errors.length} channel warnings</summary>
+                  <ul className="mt-1 text-amber-300/70 text-xs space-y-0.5 list-disc list-inside">
+                    {fetchResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                  </ul>
+                </details>
+              )}
+            </div>
+          </div>
+        )}
 
-      {loading ? (
-        <p className="text-gray-500 text-center py-12">Loading…</p>
-      ) : entries.length === 0 ? (
-        <p className="text-gray-500 text-center py-12">
-          No signals found. Hit <strong>Fetch Latest</strong> to pull today&apos;s data.
-        </p>
-      ) : (
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-3 font-semibold text-gray-700">Ticker</th>
-                <th className="text-left px-4 py-3 font-semibold text-gray-700">Company</th>
-                <th className="text-center px-4 py-3 font-semibold text-gray-700">Channels</th>
-                <th className="text-center px-4 py-3 font-semibold text-gray-700">Mentions</th>
-                <th className="text-center px-4 py-3 font-semibold text-gray-700">Score</th>
-                <th className="text-left px-4 py-3 font-semibold text-gray-700">Sentiment</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry, i) => {
+        {/* Main content */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-3">
+            <svg className="animate-spin h-6 w-6 text-blue-500" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+            <span className="text-slate-500 text-sm">Loading signals…</span>
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center text-2xl">📡</div>
+            <div>
+              <p className="text-slate-300 font-medium">No signals yet</p>
+              <p className="text-slate-500 text-sm mt-1">Hit <span className="text-blue-400 font-medium">Fetch Latest</span> to pull today&apos;s data from YouTube</p>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-slate-800 overflow-hidden">
+            {/* Table header */}
+            <div className="grid grid-cols-[2fr_2.5fr_1fr_1fr_1fr_1.5fr] text-xs font-medium text-slate-500 uppercase tracking-wider px-5 py-3 bg-slate-900 border-b border-slate-800">
+              <span>Ticker</span>
+              <span>Company</span>
+              <span className="text-center">Channels</span>
+              <span className="text-center">Mentions</span>
+              <span className="text-center">Score</span>
+              <span>Sentiment</span>
+            </div>
+
+            {/* Rows */}
+            <div className="divide-y divide-slate-800/60">
+              {entries.map((entry) => {
                 const isExpanded = expanded === entry.ticker;
-                const dominantSentiment = entry.details.length > 0
-                  ? entry.details.reduce<Record<string, number>>((acc, d) => {
-                      acc[d.sentiment] = (acc[d.sentiment] ?? 0) + 1;
-                      return acc;
-                    }, {})
-                  : {};
-                const topSentiment = Object.entries(dominantSentiment).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'neutral';
+                const sentiment = topSentiment(entry);
 
                 return (
                   <React.Fragment key={entry.ticker}>
-                    <tr
+                    <div
                       onClick={() => setExpanded(isExpanded ? null : entry.ticker)}
-                      className={`border-t border-gray-100 cursor-pointer hover:bg-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+                      className={`grid grid-cols-[2fr_2.5fr_1fr_1fr_1fr_1.5fr] px-5 py-4 cursor-pointer transition-colors items-center
+                        ${isExpanded ? 'bg-slate-800/80' : 'bg-slate-950 hover:bg-slate-900'}`}
                     >
-                      <td className="px-4 py-3 font-mono font-bold text-blue-700">{entry.ticker}</td>
-                      <td className="px-4 py-3 text-gray-700">{entry.company ?? '—'}</td>
-                      <td className="px-4 py-3 text-center text-gray-700">{entry.channel_count}</td>
-                      <td className="px-4 py-3 text-center text-gray-700">{entry.mention_count}</td>
-                      <td className="px-4 py-3 text-center font-medium text-gray-900">{entry.weighted_score.toFixed(2)}</td>
-                      <td className={`px-4 py-3 ${sentimentColor(topSentiment)}`}>{topSentiment}</td>
-                    </tr>
+                      <span className="font-mono font-bold text-blue-400 tracking-wide text-sm">{entry.ticker}</span>
+                      <span className="text-slate-300 text-sm truncate pr-4">{entry.company ?? '—'}</span>
+                      <span className="text-center text-slate-400 text-sm">{entry.channel_count}</span>
+                      <span className="text-center text-slate-400 text-sm">{entry.mention_count}</span>
+                      <span className="text-center font-semibold text-white text-sm">{entry.weighted_score.toFixed(2)}</span>
+                      <SentimentBadge sentiment={sentiment} />
+                    </div>
+
                     {isExpanded && entry.details.length > 0 && (
-                      <tr key={`${entry.ticker}-details`} className="border-t border-gray-100 bg-blue-50/30">
-                        <td colSpan={6} className="px-4 py-3">
-                          <div className="space-y-2">
-                            {entry.details.map((d, j) => (
-                              <div key={j} className="flex gap-3 text-sm">
-                                <span className="font-medium text-gray-700 min-w-[160px]">{d.channel_name}</span>
-                                <span className="text-gray-500 min-w-[120px]">{d.video_title.slice(0, 40)}{d.video_title.length > 40 ? '…' : ''}</span>
-                                <span className={`min-w-[70px] ${sentimentColor(d.sentiment)}`}>{d.sentiment}</span>
-                                <span className="text-gray-400 min-w-[60px]">{d.conviction}</span>
-                                {d.quote && <span className="text-gray-600 italic">&quot;{d.quote}&quot;</span>}
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
+                      <div className="bg-slate-900/60 border-t border-slate-800/50 px-5 py-4">
+                        <div className="space-y-3">
+                          {entry.details.map((d, j) => (
+                            <div key={j} className="grid grid-cols-[160px_1fr_100px_80px] gap-4 text-sm items-start">
+                              <span className="text-slate-300 font-medium truncate">{d.channel_name}</span>
+                              <span className="text-slate-500 truncate text-xs pt-0.5">{d.video_title}</span>
+                              <SentimentBadge sentiment={d.sentiment} />
+                              <ConvictionDot conviction={d.conviction} />
+                            </div>
+                          ))}
+                          {entry.details.some(d => d.quote) && (
+                            <div className="mt-3 pt-3 border-t border-slate-800 space-y-1.5">
+                              {entry.details.filter(d => d.quote).map((d, j) => (
+                                <p key={j} className="text-xs text-slate-400 italic">
+                                  <span className="text-slate-500 not-italic font-medium">{d.channel_name}: </span>
+                                  &ldquo;{d.quote}&rdquo;
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </React.Fragment>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </main>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
   );
 }
