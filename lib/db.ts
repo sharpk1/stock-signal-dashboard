@@ -38,7 +38,7 @@ export function initDb(db: DatabaseType): void {
       ticker     TEXT NOT NULL,
       company    TEXT,
       sentiment  TEXT CHECK(sentiment IN ('bullish','bearish','neutral')),
-      conviction TEXT CHECK(conviction IN ('high','medium','low')),
+      conviction INTEGER NOT NULL DEFAULT 50,
       quote      TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(video_id, ticker)
@@ -77,7 +77,7 @@ export function saveMention(
     ticker: string;
     company: string | null;
     sentiment: string;
-    conviction: string;
+    conviction: number;
     quote: string | null;
   }
 ): void {
@@ -105,11 +105,7 @@ export function getLeaderboard(db: DatabaseType, channelName?: string): Leaderbo
       tm.company,
       COUNT(DISTINCT v.channel_id)  AS channel_count,
       COUNT(*)                       AS mention_count,
-      SUM(c.weight * CASE tm.conviction
-        WHEN 'high'   THEN 1.0
-        WHEN 'medium' THEN 0.6
-        WHEN 'low'    THEN 0.3
-        ELSE 0.3 END)                AS weighted_score,
+      SUM(c.weight * (tm.conviction / 100.0)) AS weighted_score,
       GROUP_CONCAT(DISTINCT c.name)  AS channels
     FROM ticker_mentions tm
     JOIN videos v   ON tm.video_id  = v.id
@@ -124,7 +120,7 @@ export function getLeaderboard(db: DatabaseType, channelName?: string): Leaderbo
 export interface MentionDetail {
   ticker: string;
   sentiment: string;
-  conviction: string;
+  conviction: number;
   quote: string | null;
   channel_name: string;
   video_title: string;

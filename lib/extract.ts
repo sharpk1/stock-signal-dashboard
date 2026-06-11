@@ -6,7 +6,7 @@ export interface TickerMention {
   ticker: string;
   company: string;
   sentiment: 'bullish' | 'bearish' | 'neutral';
-  conviction: 'high' | 'medium' | 'low';
+  conviction: number; // 0-100
   quote: string;
 }
 
@@ -20,7 +20,8 @@ export function parseExtractionResponse(raw: string): TickerMention[] {
     const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((item): item is TickerMention =>
-      typeof item?.ticker === 'string' && item.ticker.length > 0
+      typeof item?.ticker === 'string' && item.ticker.length > 0 &&
+      typeof item?.conviction === 'number'
     );
   } catch {
     return [];
@@ -39,15 +40,20 @@ Return strict JSON array:
     "ticker": "CRM",
     "company": "Salesforce",
     "sentiment": "bullish" | "bearish" | "neutral",
-    "conviction": "high" | "medium" | "low",
+    "conviction": <integer 0-100>,
     "quote": "<verbatim short quote supporting the call>"
   }
 ]
 
-Conviction rubric:
-- high: host explicitly recommends buying/selling, gives price target, or says "I'm buying this"
-- medium: host discusses positively/negatively with analysis but no explicit action
-- low: mentioned in passing or as part of a list
+Conviction score (0-100):
+- 90-100: Explicit strong buy/sell, large personal position disclosed, ambitious price target (2x+), multiple analyses, "definitely buying/holding", willing to add
+- 75-89: Clear recommendation with commitment, meaningful position mentioned, price target 1.5x-2x, solid analysis, minor caveats
+- 50-74: Positive/negative analysis but less committed, no/vague position, hedging language ("could be", "might"), would act but not urgently
+- 25-49: Brief mention with some reasoning, unclear recommendation, significant caveats, mentioned mainly as example
+- 0-24: "I don't know", explicitly dismissive, no meaningful analysis, casual passing reference
+
+Key factors that raise conviction: skin in the game (position size), specificity (price targets, timeframes), depth (multiple supporting points), certainty language ("will" vs "could"), willingness to act.
+Key factors that lower conviction: caveats, contradictions, hedging.
 
 Return only the JSON array, no other text.`,
     messages: [

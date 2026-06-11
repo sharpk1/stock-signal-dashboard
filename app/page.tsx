@@ -18,13 +18,15 @@ function SentimentBadge({ sentiment }: { sentiment: string }) {
   );
 }
 
-function ConvictionDot({ conviction }: { conviction: string }) {
-  const dots = { high: 3, medium: 2, low: 1 }[conviction] ?? 1;
+function ConvictionBadge({ conviction }: { conviction: number }) {
+  const color =
+    conviction >= 75 ? 'bg-emerald-100 text-emerald-700' :
+    conviction >= 50 ? 'bg-blue-100 text-blue-700' :
+    conviction >= 25 ? 'bg-amber-100 text-amber-700' :
+    'bg-gray-100 text-gray-500';
   return (
-    <span className="flex gap-0.5 items-center">
-      {[1, 2, 3].map(i => (
-        <span key={i} className={`w-1.5 h-1.5 rounded-full ${i <= dots ? 'bg-blue-500' : 'bg-gray-200'}`} />
-      ))}
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
+      {conviction}%
     </span>
   );
 }
@@ -196,8 +198,8 @@ export default function Page() {
                 <span className="text-gray-300 text-[10px]">ⓘ</span>
                 <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-60 bg-gray-900 text-white text-xs rounded-lg px-3 py-2.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg normal-case tracking-normal font-normal text-left leading-relaxed">
                   <p className="font-semibold mb-1">How score is calculated</p>
-                  <p className="text-gray-300">Sum of <span className="text-white">channel weight × conviction</span> for every mention.</p>
-                  <p className="text-gray-400 mt-1.5">Conviction: high = 100%, medium = 60%, low = 30%</p>
+                  <p className="text-gray-300">Sum of <span className="text-white">channel weight × conviction score</span> for every mention.</p>
+                  <p className="text-gray-400 mt-1.5">Conviction: 0–100% based on position size, price targets, certainty language, and depth of analysis.</p>
                   <p className="text-gray-400 mt-0.5">Royce Jakob = 20% weight, others = 13.3%</p>
                 </div>
               </span>
@@ -233,7 +235,7 @@ export default function Page() {
                               <span className="text-gray-700 font-medium truncate">{d.channel_name}</span>
                               <span className="text-gray-400 truncate text-xs">{d.video_title}</span>
                               <SentimentBadge sentiment={d.sentiment} />
-                              <ConvictionDot conviction={d.conviction} />
+                              <ConvictionBadge conviction={d.conviction} />
                             </div>
                           ))}
                           {entry.details.some(d => d.quote) && (

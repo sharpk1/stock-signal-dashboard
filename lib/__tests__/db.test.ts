@@ -64,7 +64,7 @@ describe('saveMention', () => {
     const db = makeTestDb();
     saveChannel(db, { id: 1, channelId: 'UC123', handle: '@test', name: 'Test', weight: 0.5 });
     const videoRowId = saveVideo(db, { videoId: 'vid1', channelId: 'UC123', title: 'T', publishedAt: '2026-06-10T12:00:00Z' });
-    saveMention(db, { videoRowId, ticker: 'CRM', company: 'Salesforce', sentiment: 'bullish', conviction: 'high', quote: 'buying CRM' });
+    saveMention(db, { videoRowId, ticker: 'CRM', company: 'Salesforce', sentiment: 'bullish', conviction: 90, quote: 'buying CRM' });
     const rows = db.prepare('SELECT * FROM ticker_mentions WHERE ticker = ?').all('CRM') as { ticker: string }[];
     expect(rows).toHaveLength(1);
   });
@@ -79,9 +79,9 @@ describe('getLeaderboard', () => {
     const v1 = saveVideo(db, { videoId: 'v1', channelId: 'UC123', title: 'T1', publishedAt: new Date().toISOString() });
     const v2 = saveVideo(db, { videoId: 'v2', channelId: 'UC456', title: 'T2', publishedAt: new Date().toISOString() });
 
-    saveMention(db, { videoRowId: v1, ticker: 'CRM', company: 'Salesforce', sentiment: 'bullish', conviction: 'high', quote: '' });
-    saveMention(db, { videoRowId: v2, ticker: 'CRM', company: 'Salesforce', sentiment: 'bullish', conviction: 'high', quote: '' });
-    saveMention(db, { videoRowId: v1, ticker: 'NOW', company: 'ServiceNow', sentiment: 'neutral', conviction: 'low', quote: '' });
+    saveMention(db, { videoRowId: v1, ticker: 'CRM', company: 'Salesforce', sentiment: 'bullish', conviction: 90, quote: '' });
+    saveMention(db, { videoRowId: v2, ticker: 'CRM', company: 'Salesforce', sentiment: 'bullish', conviction: 90, quote: '' });
+    saveMention(db, { videoRowId: v1, ticker: 'NOW', company: 'ServiceNow', sentiment: 'neutral', conviction: 25, quote: '' });
 
     const rows = getLeaderboard(db);
     expect(rows[0].ticker).toBe('CRM');
@@ -94,7 +94,7 @@ describe('getLeaderboard', () => {
     saveChannel(db, { id: 1, channelId: 'UC123', handle: '@c1', name: 'C1', weight: 0.5 });
     const oldDate = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
     const v = saveVideo(db, { videoId: 'v1', channelId: 'UC123', title: 'Old', publishedAt: oldDate });
-    saveMention(db, { videoRowId: v, ticker: 'AAPL', company: 'Apple', sentiment: 'bullish', conviction: 'high', quote: '' });
+    saveMention(db, { videoRowId: v, ticker: 'AAPL', company: 'Apple', sentiment: 'bullish', conviction: 90, quote: '' });
     const rows = getLeaderboard(db);
     expect(rows.find(r => r.ticker === 'AAPL')).toBeUndefined();
   });
@@ -105,7 +105,7 @@ describe('getMentionDetails', () => {
     const db = makeTestDb();
     saveChannel(db, { id: 1, channelId: 'UC123', handle: '@test', name: 'Test Channel', weight: 0.5 });
     const videoRowId = saveVideo(db, { videoId: 'vid1', channelId: 'UC123', title: 'My Video', publishedAt: new Date().toISOString() });
-    saveMention(db, { videoRowId, ticker: 'CRM', company: 'Salesforce', sentiment: 'bullish', conviction: 'high', quote: 'love this stock' });
+    saveMention(db, { videoRowId, ticker: 'CRM', company: 'Salesforce', sentiment: 'bullish', conviction: 90, quote: 'love this stock' });
 
     const details = getMentionDetails(db);
     expect(details).toHaveLength(1);
