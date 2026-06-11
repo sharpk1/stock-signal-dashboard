@@ -30,12 +30,7 @@ export async function fetchRecentVideos(channel: Channel): Promise<RssVideo[]> {
   const all = parseRssFeed(xml);
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   const recent = all.filter(v => new Date(v.publishedAt).getTime() >= cutoff);
-  console.log(`[${channel.name}] RSS: ${all.length} videos total, ${recent.length} within 24h`);
-  all.forEach(v => {
-    const hoursAgo = ((Date.now() - new Date(v.publishedAt).getTime()) / 3600000).toFixed(1);
-    const included = new Date(v.publishedAt).getTime() >= cutoff;
-    console.log(`  ${included ? '✓' : '✗'} "${v.title}" — ${hoursAgo}h ago`);
-  });
+  console.log(`[${channel.name}] ${recent.length} new video(s) in last 24h`);
   return recent;
 }
 

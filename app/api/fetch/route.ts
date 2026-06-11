@@ -41,8 +41,6 @@ export async function POST() {
         continue;
       }
 
-      console.log(`  transcript: ${transcript.length} chars — "${transcript.slice(0, 200).replace(/\n/g, ' ')}…"`);
-
       const videoRowId = saveVideo(db, {
         videoId: video.videoId,
         channelId: channel.channelId,
