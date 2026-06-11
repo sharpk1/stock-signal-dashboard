@@ -231,8 +231,14 @@ export default function Page() {
                     {isExpanded && entry.details.length > 0 && (
                       <div className="bg-blue-50/50 border-t border-blue-100 px-5 py-4">
                         <div className="space-y-3">
+                          <div className="grid grid-cols-[160px_1fr_100px_120px] gap-4 text-xs font-medium text-gray-400 uppercase tracking-wider pb-1">
+                            <span>Channel</span>
+                            <span>Video</span>
+                            <span>Sentiment</span>
+                            <span>Conviction Score</span>
+                          </div>
                           {entry.details.map((d, j) => (
-                            <div key={j} className="grid grid-cols-[160px_1fr_100px_80px] gap-4 text-sm items-center">
+                            <div key={j} className="grid grid-cols-[160px_1fr_100px_120px] gap-4 text-sm items-center">
                               <span className="text-gray-700 font-medium truncate">{d.channel_name}</span>
                               <span className="text-gray-400 truncate text-xs">{d.video_title}</span>
                               <SentimentBadge sentiment={d.sentiment} />
