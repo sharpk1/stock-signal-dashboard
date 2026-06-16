@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { initDb, saveChannel, saveVideo, saveMention, getLeaderboard, getMentionDetails } from '@/lib/db';
+import { initDb, saveChannel, saveVideo, saveMention, getLeaderboard, getMentionDetails,
+         updateVideoTranscript, saveMemory, getMemories, saveConversation, getRecentConversations } from '@/lib/db';
 
 function makeTestDb() {
   const db = new Database(':memory:');
@@ -113,5 +114,55 @@ describe('getMentionDetails', () => {
     expect(details[0].channel_name).toBe('Test Channel');
     expect(details[0].video_title).toBe('My Video');
     expect(details[0].quote).toBe('love this stock');
+  });
+});
+
+describe('updateVideoTranscript', () => {
+  it('stores transcript and summary on a video row', () => {
+    const db = makeTestDb();
+    saveChannel(db, { id: 1, channelId: 'UC123', handle: '@test', name: 'Test', weight: 0.5 });
+    const videoRowId = saveVideo(db, { videoId: 'v1', channelId: 'UC123', title: 'T', publishedAt: new Date().toISOString() });
+    updateVideoTranscript(db, videoRowId, 'full transcript text', 'summary text');
+    const row = db.prepare('SELECT transcript, summary FROM videos WHERE id = ?').get(videoRowId) as { transcript: string; summary: string };
+    expect(row.transcript).toBe('full transcript text');
+    expect(row.summary).toBe('summary text');
+  });
+});
+
+describe('saveMemory and getMemories', () => {
+  it('saves a memory and retrieves it', () => {
+    const db = makeTestDb();
+    saveMemory(db, 'Ray prefers swing trades', 'explicit');
+    saveMemory(db, 'Ray is long CELH', 'extracted');
+    const memories = getMemories(db);
+    expect(memories).toHaveLength(2);
+    expect(memories).toContain('Ray prefers swing trades');
+    expect(memories).toContain('Ray is long CELH');
+  });
+
+  it('returns empty array when no memories exist', () => {
+    const db = makeTestDb();
+    expect(getMemories(db)).toEqual([]);
+  });
+});
+
+describe('saveConversation and getRecentConversations', () => {
+  it('saves a conversation and retrieves it', () => {
+    const db = makeTestDb();
+    saveConversation(db, 'What is Jeremy saying?', 'Jeremy is bullish on CELH.');
+    const convs = getRecentConversations(db);
+    expect(convs).toHaveLength(1);
+    expect(convs[0].question).toBe('What is Jeremy saying?');
+    expect(convs[0].answer).toBe('Jeremy is bullish on CELH.');
+  });
+
+  it('returns at most n conversations in reverse chronological order', () => {
+    const db = makeTestDb();
+    saveConversation(db, 'Q1', 'A1');
+    saveConversation(db, 'Q2', 'A2');
+    saveConversation(db, 'Q3', 'A3');
+    const convs = getRecentConversations(db, 2);
+    expect(convs).toHaveLength(2);
+    expect(convs[0].question).toBe('Q3'); // most recent first
   });
 });

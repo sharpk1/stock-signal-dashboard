@@ -44,6 +44,26 @@ export function initDb(db: DatabaseType): void {
       UNIQUE(video_id, ticker)
     );
   `);
+
+  // Add transcript/summary columns if not yet present (idempotent)
+  try { db.exec('ALTER TABLE videos ADD COLUMN transcript TEXT'); } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE videos ADD COLUMN summary TEXT'); } catch { /* already exists */ }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memories (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      content    TEXT NOT NULL,
+      source     TEXT NOT NULL DEFAULT 'explicit',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS conversations (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      question   TEXT NOT NULL,
+      answer     TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
 }
 
 export function saveChannel(db: DatabaseType, channel: Channel): void {
@@ -148,4 +168,40 @@ export function getMentionDetails(db: DatabaseType, channelName?: string): Menti
     ${channelFilter}
     ORDER BY tm.ticker, c.weight DESC
   `).all(...params) as MentionDetail[];
+}
+
+export function updateVideoTranscript(
+  db: DatabaseType,
+  videoRowId: number,
+  transcript: string,
+  summary: string
+): void {
+  db.prepare('UPDATE videos SET transcript = ?, summary = ? WHERE id = ?')
+    .run(transcript, summary, videoRowId);
+}
+
+export function saveMemory(
+  db: DatabaseType,
+  content: string,
+  source: 'explicit' | 'extracted'
+): void {
+  db.prepare('INSERT INTO memories (content, source) VALUES (?, ?)').run(content, source);
+}
+
+export function getMemories(db: DatabaseType): string[] {
+  const rows = db.prepare('SELECT content FROM memories ORDER BY created_at DESC').all() as { content: string }[];
+  return rows.map(r => r.content);
+}
+
+export function saveConversation(db: DatabaseType, question: string, answer: string): void {
+  db.prepare('INSERT INTO conversations (question, answer) VALUES (?, ?)').run(question, answer);
+}
+
+export function getRecentConversations(
+  db: DatabaseType,
+  n: number = 5
+): { question: string; answer: string }[] {
+  return db.prepare(
+    'SELECT question, answer FROM conversations ORDER BY created_at DESC, id DESC LIMIT ?'
+  ).all(n) as { question: string; answer: string }[];
 }
