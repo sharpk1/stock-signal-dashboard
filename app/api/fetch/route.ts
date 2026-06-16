@@ -38,33 +38,43 @@ export async function POST() {
         publishedAt: video.publishedAt,
       });
 
-      // skip if already fully processed
-      const existing = db.prepare('SELECT transcript FROM videos WHERE id = ?')
-        .get(videoRowId) as { transcript: string | null };
-      if (existing.transcript) {
+      // Check processing state
+      const existing = db.prepare(`
+        SELECT v.transcript,
+               (SELECT COUNT(*) FROM ticker_mentions WHERE video_id = v.id) AS mention_count
+        FROM videos v WHERE v.id = ?
+      `).get(videoRowId) as { transcript: string | null; mention_count: number };
+
+      if (existing.transcript && existing.mention_count > 0) {
+        // fully processed — skip
         console.log(`Skipped (already processed): ${video.title}`);
         continue;
       }
 
       let transcript: string;
-      try {
-        transcript = await fetchTranscript(video.videoId);
-      } catch (err) {
-        const msg = `${channel.name} / ${video.videoId}: transcript unavailable — ${err instanceof Error ? err.message : err}`;
-        errors.push(msg);
-        console.error(msg);
-        continue;
-      }
+      if (existing.transcript) {
+        // transcript stored but extraction previously failed — reuse stored transcript
+        transcript = existing.transcript;
+      } else {
+        // fresh video — fetch transcript and generate summary
+        try {
+          transcript = await fetchTranscript(video.videoId);
+        } catch (err) {
+          const msg = `${channel.name} / ${video.videoId}: transcript unavailable — ${err instanceof Error ? err.message : err}`;
+          errors.push(msg);
+          console.error(msg);
+          continue;
+        }
 
-      let summary = '';
-      try {
-        summary = await generateSummary(transcript);
-      } catch (err) {
-        console.error(`${channel.name} / ${video.title}: summary generation failed — ${err instanceof Error ? err.message : err}`);
-        // store transcript without summary rather than failing the whole video
-      }
+        let summary = '';
+        try {
+          summary = await generateSummary(transcript);
+        } catch (err) {
+          console.error(`${channel.name} / ${video.title}: summary generation failed — ${err instanceof Error ? err.message : err}`);
+        }
 
-      updateVideoTranscript(db, videoRowId, transcript, summary);
+        updateVideoTranscript(db, videoRowId, transcript, summary);
+      }
 
       let mentions;
       try {
