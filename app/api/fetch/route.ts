@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { CHANNELS } from '@/lib/channels';
-import { getDb, saveChannel, saveVideo, saveMention } from '@/lib/db';
+import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript } from '@/lib/db';
 import { fetchRecentVideos, fetchTranscript } from '@/lib/youtube';
-import { extractTickers } from '@/lib/extract';
+import { extractTickers, generateSummary } from '@/lib/extract';
 
 export const maxDuration = 300;
 
@@ -31,6 +31,21 @@ export async function POST() {
     }
 
     for (const video of videos) {
+      const videoRowId = saveVideo(db, {
+        videoId: video.videoId,
+        channelId: channel.channelId,
+        title: video.title,
+        publishedAt: video.publishedAt,
+      });
+
+      // skip if already fully processed
+      const existing = db.prepare('SELECT transcript FROM videos WHERE id = ?')
+        .get(videoRowId) as { transcript: string | null };
+      if (existing.transcript) {
+        console.log(`Skipped (already processed): ${video.title}`);
+        continue;
+      }
+
       let transcript: string;
       try {
         transcript = await fetchTranscript(video.videoId);
@@ -41,12 +56,15 @@ export async function POST() {
         continue;
       }
 
-      const videoRowId = saveVideo(db, {
-        videoId: video.videoId,
-        channelId: channel.channelId,
-        title: video.title,
-        publishedAt: video.publishedAt,
-      });
+      let summary = '';
+      try {
+        summary = await generateSummary(transcript);
+      } catch (err) {
+        console.error(`${channel.name} / ${video.title}: summary generation failed — ${err instanceof Error ? err.message : err}`);
+        // store transcript without summary rather than failing the whole video
+      }
+
+      updateVideoTranscript(db, videoRowId, transcript, summary);
 
       let mentions;
       try {
