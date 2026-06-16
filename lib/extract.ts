@@ -67,3 +67,18 @@ Return only the JSON array, no other text.`,
   const raw = message.content[0].type === 'text' ? message.content[0].text : '';
   return parseExtractionResponse(raw);
 }
+
+export async function generateSummary(transcript: string): Promise<string> {
+  const message = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 1024,
+    system: `Summarize this YouTube transcript for a stock research assistant.
+Extract: tickers mentioned with sentiment and thesis, key direct quotes,
+price targets, timeline language (e.g. "by year end", "6-9 months"),
+and overall conviction level.
+Format as plain readable text optimized for keyword search.
+Keep it under 400 words.`,
+    messages: [{ role: 'user', content: transcript.slice(0, 60000) }],
+  });
+  return message.content[0].type === 'text' ? message.content[0].text : '';
+}
