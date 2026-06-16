@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import React from 'react';
 import type { LeaderboardEntry } from '@/app/api/leaderboard/route';
 import { CHANNELS } from '@/lib/channels';
@@ -52,6 +52,7 @@ export default function Page() {
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const loadLeaderboard = useCallback(async (channel?: string | null) => {
     setLoading(true);
@@ -72,6 +73,10 @@ export default function Page() {
   }
 
   useEffect(() => { loadLeaderboard(null); }, [loadLeaderboard]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
 
   async function handleFetch() {
     setFetching(true);
@@ -108,8 +113,8 @@ export default function Page() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question }),
       });
-      const { answer } = await res.json() as { answer: string };
-      setChatMessages(prev => [...prev, { role: 'assistant', content: answer }]);
+      const data = await res.json() as { answer?: string };
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.answer ?? 'Something went wrong. Please try again.' }]);
     } finally {
       setChatLoading(false);
     }
@@ -390,6 +395,7 @@ export default function Page() {
               </div>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input area */}
