@@ -127,6 +127,11 @@ describe('updateVideoTranscript', () => {
     expect(row.transcript).toBe('full transcript text');
     expect(row.summary).toBe('summary text');
   });
+
+  it('throws when videoRowId does not exist', () => {
+    const db = makeTestDb();
+    expect(() => updateVideoTranscript(db, 999, 'transcript', 'summary')).toThrow('No video row found for id 999');
+  });
 });
 
 describe('saveMemory and getMemories', () => {

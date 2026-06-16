@@ -176,8 +176,9 @@ export function updateVideoTranscript(
   transcript: string,
   summary: string
 ): void {
-  db.prepare('UPDATE videos SET transcript = ?, summary = ? WHERE id = ?')
+  const result = db.prepare('UPDATE videos SET transcript = ?, summary = ? WHERE id = ?')
     .run(transcript, summary, videoRowId);
+  if (result.changes === 0) throw new Error(`No video row found for id ${videoRowId}`);
 }
 
 export function saveMemory(
@@ -202,6 +203,6 @@ export function getRecentConversations(
   n: number = 5
 ): { question: string; answer: string }[] {
   return db.prepare(
-    'SELECT question, answer FROM conversations ORDER BY created_at DESC, id DESC LIMIT ?'
+    'SELECT question, answer FROM conversations ORDER BY id DESC LIMIT ?'
   ).all(n) as { question: string; answer: string }[];
 }
