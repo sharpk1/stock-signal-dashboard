@@ -1,15 +1,26 @@
 import { Database as DatabaseType } from 'better-sqlite3';
 import { saveMemory } from '@/lib/db';
 
+function getString(input: Record<string, unknown>, key: string): { value: string } | { error: string } {
+  const val = input[key];
+  if (typeof val !== 'string' || val.length === 0) return { error: `Missing required field: ${key}` };
+  return { value: val };
+}
+
 export function executeToolCall(
   name: string,
   input: Record<string, unknown>,
   db: DatabaseType
 ): string {
   if (name === 'search_summaries') {
-    const { query, channel, days = 30 } = input as { query: string; channel?: string; days?: number };
+    const queryResult = getString(input, 'query');
+    if ('error' in queryResult) return queryResult.error;
+    const { value: query } = queryResult;
+    const channel = typeof input['channel'] === 'string' ? input['channel'] : undefined;
+    const daysNum = Math.max(1, Math.floor(Number(input['days'] ?? 30)));
+    const safedays = Number.isFinite(daysNum) ? daysNum : 30;
     const channelFilter = channel ? 'AND c.name = ?' : '';
-    const params: unknown[] = [`%${query}%`, String(days)];
+    const params: unknown[] = [`%${query}%`, safedays];
     if (channel) params.push(channel);
 
     const rows = db.prepare(`
@@ -33,7 +44,9 @@ export function executeToolCall(
   }
 
   if (name === 'get_full_transcript') {
-    const { video_id } = input as { video_id: string };
+    const videoIdResult = getString(input, 'video_id');
+    if ('error' in videoIdResult) return videoIdResult.error;
+    const { value: video_id } = videoIdResult;
     const row = db.prepare(`
       SELECT v.transcript, v.title, c.name AS channel_name, v.published_at
       FROM videos v
@@ -49,7 +62,9 @@ export function executeToolCall(
   }
 
   if (name === 'save_memory') {
-    const { content } = input as { content: string };
+    const contentResult = getString(input, 'content');
+    if ('error' in contentResult) return contentResult.error;
+    const { value: content } = contentResult;
     saveMemory(db, content, 'explicit');
     return 'Memory saved.';
   }

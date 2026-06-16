@@ -94,14 +94,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ answer });
     }
 
-    const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
+    const toolUseBlocks = response.content.filter(
+      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
+    );
     if (toolUseBlocks.length === 0) break;
 
-    const toolResults: Anthropic.ToolResultBlockParam[] = toolUseBlocks.map(block => {
-      if (block.type !== 'tool_use') return { type: 'tool_result' as const, tool_use_id: '', content: '' };
-      const result = executeToolCall(block.name, block.input as Record<string, unknown>, db);
-      return { type: 'tool_result' as const, tool_use_id: block.id, content: result };
-    });
+    const toolResults: Anthropic.ToolResultBlockParam[] = toolUseBlocks.map(block => ({
+      type: 'tool_result' as const,
+      tool_use_id: block.id,
+      content: executeToolCall(block.name, block.input as Record<string, unknown>, db),
+    }));
 
     messages.push(
       { role: 'assistant', content: response.content },
@@ -123,7 +125,7 @@ function extractAndSaveMemories(db: ReturnType<typeof getDb>, question: string, 
 
 async function doExtractMemories(db: ReturnType<typeof getDb>, question: string, answer: string): Promise<void> {
   const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-haiku-4-5',
     max_tokens: 256,
     messages: [{
       role: 'user',

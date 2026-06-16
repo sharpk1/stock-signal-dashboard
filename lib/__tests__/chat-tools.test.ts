@@ -75,3 +75,11 @@ describe('executeToolCall — save_memory', () => {
     expect(getMemories(db)).toContain('Ray prefers swing trades');
   });
 });
+
+describe('executeToolCall — unknown tool', () => {
+  it('returns unknown tool message for unrecognized name', () => {
+    const db = makeTestDb();
+    const result = executeToolCall('does_not_exist', {}, db);
+    expect(result).toBe('Unknown tool: does_not_exist');
+  });
+});
