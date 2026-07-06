@@ -39,6 +39,8 @@ export async function fetchSubstackPosts(handle: string): Promise<SubstackPost[]
     body_html: string;
   }>;
 
+  if (!Array.isArray(posts)) throw new Error(`Unexpected response shape from Substack API for ${handle}`);
+
   const cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
 
   return posts

@@ -56,7 +56,7 @@ export async function POST() {
         continue;
       }
 
-      let transcript: string;
+      let transcript: string = '';
       if (existing.transcript) {
         // transcript stored but extraction previously failed — reuse stored transcript
         transcript = existing.transcript;
