@@ -8,12 +8,19 @@ export function extractSubstackContent(bodyHtml: string): {
   youtubeVideoId: string | null;
   articleText: string;
 } {
-  const videoMatch = bodyHtml.match(/&quot;videoId&quot;:&quot;([^&"]+)&quot;/);
+  // body_html from Substack API uses HTML entity encoding for attribute values
+  const decoded = bodyHtml.replace(/&quot;/g, '"');
+  const videoMatch = decoded.match(/"videoId":"([^"]+)"/);
   const youtubeVideoId = videoMatch ? videoMatch[1] : null;
   const articleText = bodyHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   return { youtubeVideoId, articleText };
 }
 
+/**
+ * videoId on each returned SubstackPost holds the post slug (e.g. "video-june-2026"),
+ * used as the unique DB key via saveVideo(). To get the embedded YouTube video ID,
+ * call extractSubstackContent(post.bodyHtml).youtubeVideoId in the caller.
+ */
 export async function fetchSubstackPosts(handle: string): Promise<SubstackPost[]> {
   const cookie = process.env.SUBSTACK_SESSION_COOKIE;
   if (!cookie) throw new Error('SUBSTACK_SESSION_COOKIE is not set');

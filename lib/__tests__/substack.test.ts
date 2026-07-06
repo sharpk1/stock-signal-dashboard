@@ -35,4 +35,10 @@ describe('extractSubstackContent', () => {
     expect(result.articleText).toBe('');
     expect(result.youtubeVideoId).toBeNull();
   });
+
+  it('extracts YouTube video ID from literal-quote data-attrs (non-entity-encoded)', () => {
+    const bodyWithLiteralQuotes = `<p>Text.</p><div data-attrs='{"videoId":"abc123","startTime":null}' data-component-name="Youtube2ToDOM"></div>`;
+    const result = extractSubstackContent(bodyWithLiteralQuotes);
+    expect(result.youtubeVideoId).toBe('abc123');
+  });
 });
