@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { CHANNELS } from '@/lib/channels';
 import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript } from '@/lib/db';
 import { fetchRecentVideos, fetchTranscript } from '@/lib/youtube';
+import { fetchSubstackPosts, extractSubstackContent, SubstackPost } from '@/lib/substack';
 import { extractTickers, generateSummary } from '@/lib/extract';
 
 export const maxDuration = 300;
@@ -15,18 +16,22 @@ export async function POST() {
   for (const channel of CHANNELS) {
     saveChannel(db, channel);
 
-    let videos;
+    let videos: Array<SubstackPost | Awaited<ReturnType<typeof fetchRecentVideos>>[number]>;
     try {
-      videos = await fetchRecentVideos(channel);
+      if (channel.source === 'substack') {
+        videos = await fetchSubstackPosts(channel.substackHandle!);
+      } else {
+        videos = await fetchRecentVideos(channel);
+      }
     } catch (err) {
-      const msg = `${channel.name}: RSS fetch failed — ${err instanceof Error ? err.message : err}`;
+      const msg = `${channel.name}: fetch failed — ${err instanceof Error ? err.message : err}`;
       errors.push(msg);
       console.error(msg);
       continue;
     }
 
     if (videos.length === 0) {
-      console.log(`${channel.name}: no new videos in last 24h`);
+      console.log(`${channel.name}: no new videos in last 3 days`);
       continue;
     }
 
@@ -56,9 +61,36 @@ export async function POST() {
         // transcript stored but extraction previously failed — reuse stored transcript
         transcript = existing.transcript;
       } else {
-        // fresh video — fetch transcript and generate summary
+        // fresh content — fetch transcript or use article text
         try {
-          transcript = await fetchTranscript(video.videoId);
+          if (channel.source === 'substack') {
+            const post = video as SubstackPost;
+            const { youtubeVideoId, articleText } = extractSubstackContent(post.bodyHtml);
+            if (youtubeVideoId) {
+              try {
+                transcript = await fetchTranscript(youtubeVideoId);
+              } catch {
+                if (!articleText) {
+                  const msg = `${channel.name} / ${video.videoId}: no transcript and no article text — skipping`;
+                  errors.push(msg);
+                  console.error(msg);
+                  continue;
+                }
+                console.warn(`${channel.name} / ${video.videoId}: YouTube transcript failed, falling back to article text`);
+                transcript = articleText;
+              }
+            } else {
+              if (!articleText) {
+                const msg = `${channel.name} / ${video.videoId}: empty body — skipping`;
+                errors.push(msg);
+                console.error(msg);
+                continue;
+              }
+              transcript = articleText;
+            }
+          } else {
+            transcript = await fetchTranscript(video.videoId);
+          }
         } catch (err) {
           const msg = `${channel.name} / ${video.videoId}: transcript unavailable — ${err instanceof Error ? err.message : err}`;
           errors.push(msg);
