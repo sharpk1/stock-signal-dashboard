@@ -1,52 +1,8 @@
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import {
-  getDb, getMemories, getRecentConversations,
-  saveConversation, saveMemory,
-} from '@/lib/db';
-import { executeToolCall } from '@/lib/chat-tools';
+import { getDb, saveConversation } from '@/lib/db';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-const TOOLS: Anthropic.Tool[] = [
-  {
-    name: 'search_summaries',
-    description: 'Search video summaries by topic, ticker, or channel. Use this first to find relevant videos.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        query:   { type: 'string', description: 'Keywords to search for in summaries' },
-        channel: { type: 'string', description: 'Optional: filter to a specific channel name' },
-        days:    { type: 'number', description: 'How many days back to search (default 30)' },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'get_full_transcript',
-    description: 'Get the full transcript for a specific video to find exact quotes.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        video_id: { type: 'string', description: 'The video_id returned by search_summaries' },
-      },
-      required: ['video_id'],
-    },
-  },
-  {
-    name: 'save_memory',
-    description: 'Save something Ray wants remembered in future conversations. Call this when Ray says "remember X".',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        content: { type: 'string', description: 'The fact or preference to remember' },
-      },
-      required: ['content'],
-    },
-  },
-];
-
-const MAX_ITERATIONS = 5;
 
 export async function POST(request: Request) {
   const body = await request.json() as { question?: string };
@@ -56,91 +12,56 @@ export async function POST(request: Request) {
   }
 
   const db = getDb();
-  const memories = getMemories(db);
-  const recent = getRecentConversations(db, 5);
 
-  const systemPrompt = [
-    "You are Ray's personal stock research assistant.",
-    'Answer questions about stocks based on what YouTube creators have said in their recent videos.',
-    'Always cite which channel and video your answer comes from.',
-    'When Ray says "remember X", call the save_memory tool.',
-    '',
-    "What you know about Ray:",
-    memories.length > 0 ? memories.map(m => `- ${m}`).join('\n') : '(no memories yet)',
-    '',
-    'Recent conversations:',
-    recent.length > 0
-      ? recent.map(c => `Q: ${c.question}\nA: ${c.answer}`).join('\n\n')
-      : '(no prior conversations)',
-  ].join('\n');
+  const rows = db.prepare(`
+    SELECT tm.ticker, tm.company, tm.sentiment, tm.conviction, tm.quote,
+           v.title, v.published_at, c.name AS channel_name
+    FROM ticker_mentions tm
+    JOIN videos v ON v.id = tm.video_id
+    JOIN channels c ON c.channel_id = v.channel_id
+    ORDER BY v.published_at DESC
+    LIMIT 100
+  `).all() as {
+    ticker: string; company: string; sentiment: string; conviction: number;
+    quote: string; title: string; published_at: string; channel_name: string;
+  }[];
 
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: question }];
-  let iterations = 0;
+  const summaryRows = db.prepare(`
+    SELECT v.title, v.published_at, v.summary, c.name AS channel_name
+    FROM videos v
+    JOIN channels c ON c.channel_id = v.channel_id
+    WHERE v.summary IS NOT NULL AND v.summary != ''
+    ORDER BY v.published_at DESC
+    LIMIT 20
+  `).all() as {
+    title: string; published_at: string; summary: string; channel_name: string;
+  }[];
 
-  while (iterations < MAX_ITERATIONS) {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      system: systemPrompt,
-      tools: TOOLS,
-      messages,
-    });
+  const tickerContext = rows.length === 0
+    ? 'No stock mentions found in the database.'
+    : rows.map(r =>
+        `[${r.channel_name}] "${r.title}" (${r.published_at.slice(0, 10)}) — ${r.ticker} (${r.company}): ${r.sentiment}, conviction ${r.conviction}%` +
+        (r.quote ? `\n  Quote: "${r.quote}"` : '')
+      ).join('\n');
 
-    if (response.stop_reason === 'end_turn') {
-      const textBlock = response.content.find(b => b.type === 'text');
-      const answer = textBlock?.type === 'text' ? textBlock.text : 'No answer found.';
-      saveConversation(db, question, answer);
-      extractAndSaveMemories(db, question, answer);
-      return NextResponse.json({ answer });
-    }
+  const summaryContext = summaryRows.length === 0
+    ? ''
+    : '\n\n--- VIDEO SUMMARIES (full thesis and reasoning) ---\n' +
+      summaryRows.map(r =>
+        `[${r.channel_name}] "${r.title}" (${r.published_at.slice(0, 10)}):\n${r.summary}`
+      ).join('\n\n');
 
-    const toolUseBlocks = response.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
-    );
-    if (toolUseBlocks.length === 0) break;
-
-    const toolResults: Anthropic.ToolResultBlockParam[] = toolUseBlocks.map(block => ({
-      type: 'tool_result' as const,
-      tool_use_id: block.id,
-      content: executeToolCall(block.name, block.input as Record<string, unknown>, db),
-    }));
-
-    messages.push(
-      { role: 'assistant', content: response.content },
-      { role: 'user', content: toolResults },
-    );
-    iterations++;
-  }
-
-  return NextResponse.json({
-    answer: "I couldn't find enough information to answer that confidently. Try asking about a specific ticker or channel.",
-  });
-}
-
-function extractAndSaveMemories(db: ReturnType<typeof getDb>, question: string, answer: string): void {
-  doExtractMemories(db, question, answer).catch(err =>
-    console.error('[memory extraction] failed:', err)
-  );
-}
-
-async function doExtractMemories(db: ReturnType<typeof getDb>, question: string, answer: string): Promise<void> {
-  const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5',
-    max_tokens: 256,
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1024,
+    system: 'You are a stock research assistant. Answer questions based only on the data provided. Always cite the channel and video title. For questions about an analyst\'s thesis or reasoning, prefer the video summaries section over ticker mentions.',
     messages: [{
       role: 'user',
-      content: `Based on this Q&A, what did you learn about Ray's preferences or portfolio that should be remembered for future sessions? Return a JSON array of short strings, or [] if nothing new.\n\nQ: ${question}\nA: ${answer}`,
+      content: `Stock mention data from recent videos:\n\n${tickerContext}${summaryContext}\n\nQuestion: ${question}`,
     }],
   });
-  const raw = message.content[0].type === 'text' ? message.content[0].text.trim() : '[]';
-  let items: unknown;
-  try {
-    items = JSON.parse(raw.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim());
-  } catch { return; }
-  if (!Array.isArray(items)) return;
-  for (const item of items) {
-    if (typeof item === 'string' && item.trim().length > 0) {
-      saveMemory(db, item.trim(), 'extracted');
-    }
-  }
+
+  const answer = response.content[0].type === 'text' ? response.content[0].text : 'No answer found.';
+  saveConversation(db, question, answer);
+  return NextResponse.json({ answer });
 }

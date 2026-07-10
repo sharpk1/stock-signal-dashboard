@@ -2,8 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { LeaderboardEntry } from '@/app/api/leaderboard/route';
 import { CHANNELS } from '@/lib/channels';
+import type { ChannelWinRate } from '@/app/api/winrate/route';
+import type { VideoUrl } from '@/app/api/videos/route';
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
   const styles: Record<string, string> = {
@@ -18,6 +22,26 @@ function SentimentBadge({ sentiment }: { sentiment: string }) {
   );
 }
 
+function ConvergenceBadge({ isConvergent, rrSolo, channels }: { isConvergent: boolean; rrSolo: boolean; channels: string }) {
+  if (isConvergent) {
+    const others = channels.split(',').filter(c => c.trim() !== 'Robert Reynolds').map(c => c.trim());
+    const label = others.length === 1 ? `RR + ${others[0]}` : `RR + ${others.length} others`;
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-300 whitespace-nowrap">
+        ⚡ {label}
+      </span>
+    );
+  }
+  if (rrSolo) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+        RR pick
+      </span>
+    );
+  }
+  return null;
+}
+
 function ConvictionBadge({ conviction }: { conviction: number }) {
   const [color, label] =
     conviction >= 90 ? ['bg-emerald-50 text-emerald-800 border border-emerald-300', 'Max'] :
@@ -28,6 +52,20 @@ function ConvictionBadge({ conviction }: { conviction: number }) {
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${color}`}>
       {label} <span className="opacity-60">{conviction}%</span>
+    </span>
+  );
+}
+
+function OutcomeBadge({ outcome }: { outcome: 'win' | 'loss' | 'skip' }) {
+  const styles = {
+    win: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+    loss: 'bg-red-50 text-red-700 border border-red-200',
+    skip: 'bg-gray-100 text-gray-500 border border-gray-200',
+  };
+  const labels = { win: '✓ Win', loss: '✗ Loss', skip: '— Skip' };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${styles[outcome]}`}>
+      {labels[outcome]}
     </span>
   );
 }
@@ -53,6 +91,15 @@ export default function Page() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<'signals' | 'track-record'>('signals');
+  const [winRateData, setWinRateData] = useState<ChannelWinRate[]>([]);
+  const [winRateDays, setWinRateDays] = useState<30 | 60 | 90>(30);
+  const [expandedWinChannel, setExpandedWinChannel] = useState<string | null>(null);
+  const [winRateLoading, setWinRateLoading] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportVideos, setExportVideos] = useState<VideoUrl[]>([]);
+  const [exportDays, setExportDays] = useState<7 | 30 | 0>(7);
+  const [copied, setCopied] = useState(false);
 
   const loadLeaderboard = useCallback(async (channel?: string | null) => {
     setLoading(true);
@@ -77,6 +124,43 @@ export default function Page() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  const loadWinRate = useCallback(async (days: 30 | 60 | 90) => {
+    setWinRateLoading(true);
+    try {
+      const res = await fetch(`/api/winrate?window=${days}`);
+      const data: ChannelWinRate[] = await res.json();
+      setWinRateData(data);
+    } finally {
+      setWinRateLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'track-record') loadWinRate(winRateDays);
+  }, [activeTab, winRateDays, loadWinRate]);
+
+  async function openExport() {
+    setExportOpen(true);
+    const res = await fetch(`/api/videos?days=${exportDays}`);
+    const data: VideoUrl[] = await res.json();
+    setExportVideos(data);
+  }
+
+  async function changeExportDays(days: 7 | 30 | 0) {
+    setExportDays(days);
+    setExportVideos([]);
+    const res = await fetch(`/api/videos?days=${days}`);
+    const data: VideoUrl[] = await res.json();
+    setExportVideos(data);
+  }
+
+  function copyAllUrls() {
+    const text = exportVideos.map(v => v.url).join('\n');
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   async function handleFetch() {
     setFetching(true);
@@ -134,6 +218,15 @@ export default function Page() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={openExport}
+              className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Export URLs
+            </button>
+            <button
               onClick={() => setChatOpen(true)}
               className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
@@ -189,6 +282,27 @@ export default function Page() {
           </div>
         )}
 
+        {/* Tab switcher */}
+        <div className="flex mb-6 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('signals')}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === 'signals' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Signals
+          </button>
+          <button
+            onClick={() => setActiveTab('track-record')}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === 'track-record' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Track Record
+          </button>
+        </div>
+
+        {activeTab === 'signals' && (<>
         {/* Channel filter pills */}
         <div className="flex flex-wrap gap-2 mb-3">
           <button
@@ -265,10 +379,13 @@ export default function Page() {
                     <div
                       onClick={() => setExpanded(isExpanded ? null : entry.ticker)}
                       className={`grid grid-cols-[28px_2fr_2.5fr_1fr_1fr_1fr_1.5fr] px-5 py-4 cursor-pointer transition-colors items-center
-                        ${isExpanded ? 'bg-blue-50' : 'bg-white hover:bg-gray-50'}`}
+                        ${isExpanded ? 'bg-blue-50' : entry.is_convergent ? 'bg-amber-50/40 hover:bg-amber-50' : 'bg-white hover:bg-gray-50'}`}
                     >
                       <span className="text-gray-400 text-xs font-medium">{index + 1}</span>
-                      <span className="font-mono font-bold text-blue-600 tracking-wide text-sm">{entry.ticker}</span>
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <span className="font-mono font-bold text-blue-600 tracking-wide text-sm">{entry.ticker}</span>
+                        <ConvergenceBadge isConvergent={entry.is_convergent} rrSolo={entry.rr_solo} channels={entry.channels} />
+                      </div>
                       <span className="text-gray-800 text-sm truncate pr-4">{entry.company ?? '—'}</span>
                       <span className="text-center text-gray-600 text-sm font-medium">{entry.channel_count}</span>
                       <span className="text-center text-gray-600 text-sm font-medium">{entry.mention_count}</span>
@@ -318,7 +435,212 @@ export default function Page() {
             </div>
           </div>
         )}
+        </>)}
+
+        {activeTab === 'track-record' && (
+          <div>
+            {/* Window toggle */}
+            <div className="flex items-center gap-1 mb-6">
+              <span className="text-xs text-gray-500 mr-2">Evaluation window:</span>
+              {([30, 60, 90] as const).map(d => (
+                <button
+                  key={d}
+                  onClick={() => setWinRateDays(d)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    winRateDays === d
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
+                  }`}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+
+            {winRateLoading ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-3">
+                <svg className="animate-spin h-6 w-6 text-blue-500" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                <span className="text-gray-400 text-sm">Loading track record…</span>
+              </div>
+            ) : (
+              <>
+                {/* Channel scorecards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                  {winRateData.map(ch => {
+                    const isSelected = expandedWinChannel === ch.channel_name;
+                    const barColor = ch.win_rate >= 65 ? 'bg-emerald-500' : ch.win_rate >= 50 ? 'bg-amber-400' : 'bg-red-400';
+                    const rateColor = ch.win_rate >= 65 ? 'text-emerald-600' : ch.win_rate >= 50 ? 'text-amber-600' : 'text-red-500';
+                    return (
+                      <button
+                        key={ch.channel_name}
+                        onClick={() => setExpandedWinChannel(isSelected ? null : ch.channel_name)}
+                        className={`text-left p-5 rounded-xl border bg-white shadow-sm transition-all ${
+                          isSelected ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="text-sm font-semibold text-gray-800 mb-4">{ch.channel_name}</div>
+                        <div className={`text-4xl font-bold mb-0.5 ${rateColor}`}>{ch.win_rate}%</div>
+                        <div className="text-xs text-gray-400 mb-3">Win Rate</div>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3">
+                          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${ch.win_rate}%` }} />
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-emerald-600 font-medium">{ch.wins}W</span>
+                          <span className="text-gray-300">·</span>
+                          <span className="text-red-500 font-medium">{ch.losses}L</span>
+                          {ch.skips > 0 && <><span className="text-gray-300">·</span><span className="text-gray-500">{ch.skips} skip</span></>}
+                          <span className="text-gray-300">·</span>
+                          <span className="text-gray-400">{ch.wins + ch.losses + ch.skips} calls</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Expanded call history */}
+                {(() => {
+                  const ch = winRateData.find(c => c.channel_name === expandedWinChannel);
+                  if (!ch) return null;
+                  return (
+                    <div className="rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm">
+                      <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
+                        <span className="font-semibold text-gray-800 text-sm">{ch.channel_name}</span>
+                        <span className="text-gray-400 text-sm ml-2">— {ch.wins + ch.losses + ch.skips} calls · last {winRateDays}d</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <div className="min-w-[720px]">
+                          <div className="grid grid-cols-[80px_1fr_100px_65px_80px_80px_70px_90px] px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 border-b border-gray-100">
+                            <span>Ticker</span>
+                            <span>Company</span>
+                            <span>Call</span>
+                            <span>Conv.</span>
+                            <span>Entry</span>
+                            <span>Now</span>
+                            <span>Return</span>
+                            <span>Outcome</span>
+                          </div>
+                          {ch.calls.map((call, i) => (
+                            <div key={i} className="grid grid-cols-[80px_1fr_100px_65px_80px_80px_70px_90px] px-5 py-3 border-b border-gray-100 last:border-0 items-center hover:bg-gray-50 transition-colors">
+                              <span className="font-mono font-bold text-blue-600 text-sm">{call.ticker}</span>
+                              <span className="text-gray-700 text-sm pr-4 truncate">{call.company}</span>
+                              <SentimentBadge sentiment={call.sentiment} />
+                              <span className="text-gray-600 text-sm">{call.conviction}%</span>
+                              <span className="text-gray-600 text-sm tabular-nums">${call.entry_price >= 100 ? call.entry_price.toFixed(0) : call.entry_price.toFixed(2)}</span>
+                              <span className="text-gray-600 text-sm tabular-nums">${call.current_price >= 100 ? call.current_price.toFixed(0) : call.current_price.toFixed(2)}</span>
+                              <span className={`text-sm font-medium tabular-nums ${
+                                call.outcome === 'skip' ? 'text-gray-400' :
+                                call.return_pct >= 0 ? 'text-emerald-600' : 'text-red-500'
+                              }`}>
+                                {call.outcome === 'skip' ? '—' : `${call.return_pct >= 0 ? '+' : ''}${call.return_pct.toFixed(1)}%`}
+                              </span>
+                              <OutcomeBadge outcome={call.outcome} />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        )}
       </main>
+
+      {/* Export URLs modal */}
+      {exportOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4"
+          onClick={() => setExportOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-200 shrink-0">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold text-gray-900">Export to NotebookLM</h2>
+                <button onClick={() => setExportOpen(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+              </div>
+              <div className="flex items-center gap-1">
+                {([7, 30, 0] as const).map(d => (
+                  <button
+                    key={d}
+                    onClick={() => changeExportDays(d)}
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                      exportDays === d
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {d === 0 ? 'All time' : `Last ${d} days`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-6 py-3">
+              {exportVideos.length === 0 ? (
+                <div className="flex items-center justify-center py-12">
+                  <svg className="animate-spin h-5 w-5 text-blue-500" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {exportVideos.map(v => (
+                    <div key={v.video_id} className="flex items-start gap-3 py-2 border-b border-gray-100 last:border-0">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{v.title}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {v.channel_name} · {v.published_at.slice(0, 10)}
+                        </p>
+                      </div>
+                      <a
+                        href={v.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="text-xs text-blue-600 hover:underline shrink-0 pt-0.5"
+                      >
+                        ↗
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between shrink-0">
+              <span className="text-xs text-gray-400">{exportVideos.length} videos</span>
+              <button
+                onClick={copyAllUrls}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                {copied ? (
+                  <>
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Copy All URLs
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quote modal */}
       {modalQuote && (
@@ -350,7 +672,7 @@ export default function Page() {
       )}
 
       {/* Chat panel */}
-      <div className={`fixed inset-y-0 right-0 w-96 bg-white shadow-2xl border-l border-gray-200 flex flex-col z-30 transition-transform duration-300 ${chatOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`fixed inset-y-0 right-0 w-[580px] bg-white shadow-2xl border-l border-gray-200 flex flex-col z-30 transition-transform duration-300 ${chatOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         {/* Panel header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
           <div className="flex items-center gap-2">
@@ -384,7 +706,26 @@ export default function Page() {
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-800'
               }`}>
-                {m.content}
+                {m.role === 'user' ? m.content : (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h3: ({ children }) => <p className="font-bold text-gray-900 mt-2 mb-1">{children}</p>,
+                      h2: ({ children }) => <p className="font-bold text-gray-900 mt-2 mb-1">{children}</p>,
+                      strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+                      hr: () => <hr className="my-2 border-gray-300" />,
+                      ul: ({ children }) => <ul className="list-disc list-inside space-y-0.5 my-1">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal list-inside space-y-0.5 my-1">{children}</ol>,
+                      p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
+                      blockquote: ({ children }) => <blockquote className="border-l-2 border-gray-400 pl-3 italic my-1 text-gray-600">{children}</blockquote>,
+                      table: ({ children }) => <table className="text-xs border-collapse my-2 w-full">{children}</table>,
+                      th: ({ children }) => <th className="border border-gray-300 px-2 py-1 bg-gray-200 font-semibold text-left">{children}</th>,
+                      td: ({ children }) => <td className="border border-gray-300 px-2 py-1">{children}</td>,
+                    }}
+                  >
+                    {m.content}
+                  </ReactMarkdown>
+                )}
               </div>
             </div>
           ))}

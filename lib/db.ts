@@ -114,6 +114,7 @@ export interface LeaderboardRow {
   mention_count: number;
   weighted_score: number;
   channels: string;
+  rr_mentions: number;
 }
 
 export function getLeaderboard(db: DatabaseType, channelName?: string): LeaderboardRow[] {
@@ -125,12 +126,13 @@ export function getLeaderboard(db: DatabaseType, channelName?: string): Leaderbo
       tm.company,
       COUNT(DISTINCT v.channel_id)  AS channel_count,
       COUNT(*)                       AS mention_count,
-      CAST(ROUND(AVG(tm.conviction)) AS INTEGER) AS weighted_score,
-      GROUP_CONCAT(DISTINCT c.name)  AS channels
+      CAST(ROUND(SUM(tm.conviction * c.weight) / SUM(c.weight)) AS INTEGER) AS weighted_score,
+      GROUP_CONCAT(DISTINCT c.name)  AS channels,
+      SUM(CASE WHEN c.name = 'Robert Reynolds' THEN 1 ELSE 0 END) AS rr_mentions
     FROM ticker_mentions tm
     JOIN videos v   ON tm.video_id  = v.id
     JOIN channels c ON v.channel_id = c.channel_id
-    WHERE rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-24 hours')
+    WHERE rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-3 days')
     ${channelFilter}
     GROUP BY tm.ticker
     ORDER BY weighted_score DESC
@@ -164,7 +166,7 @@ export function getMentionDetails(db: DatabaseType, channelName?: string): Menti
     FROM ticker_mentions tm
     JOIN videos v   ON tm.video_id  = v.id
     JOIN channels c ON v.channel_id = c.channel_id
-    WHERE rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-24 hours')
+    WHERE rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-3 days')
     ${channelFilter}
     ORDER BY tm.ticker, c.weight DESC
   `).all(...params) as MentionDetail[];

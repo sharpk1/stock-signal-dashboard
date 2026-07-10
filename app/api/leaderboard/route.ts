@@ -4,6 +4,8 @@ import { getDb, getLeaderboard, getMentionDetails, type LeaderboardRow, type Men
 export interface LeaderboardEntry extends LeaderboardRow {
   details: MentionDetail[];
   normalized_score: number;
+  is_convergent: boolean;
+  rr_solo: boolean;
 }
 
 export async function GET(request: Request) {
@@ -23,6 +25,8 @@ export async function GET(request: Request) {
     ...row,
     details: detailsByTicker[row.ticker] ?? [],
     normalized_score: row.weighted_score,
+    is_convergent: row.rr_mentions > 0 && row.channel_count >= 2,
+    rr_solo: row.rr_mentions > 0 && row.channel_count === 1,
   }));
 
   return NextResponse.json(entries);
