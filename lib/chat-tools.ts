@@ -20,14 +20,19 @@ export function executeToolCall(
     const daysNum = Math.max(1, Math.floor(Number(input['days'] ?? 30)));
     const safedays = Number.isFinite(daysNum) ? daysNum : 30;
     const channelFilter = channel ? 'AND c.name = ?' : '';
-    const params: unknown[] = [`%${query}%`, safedays];
+    const params: unknown[] = [`%${query}%`, `%${query}%`, query, `%${query}%`, safedays];
     if (channel) params.push(channel);
-
     const rows = db.prepare(`
-      SELECT v.title, v.summary, v.video_id, v.published_at, c.name AS channel_name
+      SELECT DISTINCT v.title, v.summary, v.video_id, v.published_at, c.name AS channel_name
       FROM videos v
       JOIN channels c ON v.channel_id = c.channel_id
-      WHERE v.summary LIKE ?
+      LEFT JOIN ticker_mentions tm ON tm.video_id = v.id
+      WHERE (
+        v.summary LIKE ?
+        OR v.title LIKE ?
+        OR UPPER(tm.ticker) = UPPER(?)
+        OR tm.company LIKE ?
+      )
         AND rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-' || ? || ' days')
         ${channelFilter}
       ORDER BY v.published_at DESC

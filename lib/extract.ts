@@ -23,7 +23,8 @@ export function parseExtractionResponse(raw: string): TickerMention[] {
       typeof item?.ticker === 'string' && item.ticker.length > 0 &&
       typeof item?.conviction === 'number'
     );
-  } catch {
+  } catch (e) {
+    console.error('[parseExtractionResponse] JSON parse failed:', e instanceof Error ? e.message : e, '— raw (first 200):', raw.slice(0, 200));
     return [];
   }
 }
@@ -31,7 +32,7 @@ export function parseExtractionResponse(raw: string): TickerMention[] {
 export async function extractTickers(transcript: string, videoTitle: string): Promise<TickerMention[]> {
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 2048,
+    max_tokens: 4096,
     system: `You are a stock research assistant. Extract every stock ticker the host is making a meaningful point about. Ignore casual market references. Resolve company names to tickers.
 
 Return strict JSON array:

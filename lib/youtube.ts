@@ -28,9 +28,9 @@ export async function fetchRecentVideos(channel: Channel): Promise<RssVideo[]> {
   if (!res.ok) throw new Error(`RSS fetch failed for ${channel.handle}: ${res.status}`);
   const xml = await res.text();
   const all = parseRssFeed(xml);
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
   const recent = all.filter(v => new Date(v.publishedAt).getTime() >= cutoff);
-  console.log(`[${channel.name}] ${recent.length} new video(s) in last 24h`);
+  console.log(`[${channel.name}] ${recent.length} new video(s) in last 3 days`);
   return recent;
 }
 
