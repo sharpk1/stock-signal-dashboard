@@ -8,6 +8,7 @@ import type { LeaderboardEntry } from '@/app/api/leaderboard/route';
 import { CHANNELS } from '@/lib/channels';
 import type { ChannelWinRate } from '@/app/api/winrate/route';
 import type { VideoUrl } from '@/app/api/videos/route';
+import { PasswordProtection } from '@/app/components/PasswordProtection';
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
   const styles: Record<string, string> = {
@@ -205,6 +206,7 @@ export default function Page() {
   }
 
   return (
+    <PasswordProtection>
     <div className="min-h-screen bg-gray-50 text-gray-900">
       {/* Header */}
       <header className="border-b border-gray-200 bg-white sticky top-0 z-10 shadow-sm">
@@ -764,5 +766,6 @@ export default function Page() {
         </div>
       </div>
     </div>
+    </PasswordProtection>
   );
 }
