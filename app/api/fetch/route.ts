@@ -8,31 +8,7 @@ import { extractTickers, generateSummary } from '@/lib/extract';
 export const maxDuration = 300;
 
 export async function POST() {
-  if (process.env.NODE_ENV === 'production') {
-    const token = process.env.GITHUB_PAT;
-    if (!token) {
-      return NextResponse.json({ error: 'GITHUB_PAT not configured' }, { status: 500 });
-    }
-    const res = await fetch(
-      'https://api.github.com/repos/sharpk1/stock-signal-dashboard/actions/workflows/fetch.yml/dispatches',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ref: 'main' }),
-      }
-    );
-    if (!res.ok) {
-      const error = await res.text();
-      return NextResponse.json({ error: `GitHub API failed: ${error}` }, { status: 500 });
-    }
-    return NextResponse.json({ queued: true });
-  }
-
-  // Development: run fetch directly
+  // Run the fetch directly in this instance and write to the DB.
   const db = getDb();
   const errors: string[] = [];
   let videosProcessed = 0;
