@@ -7,14 +7,7 @@ import { extractTickers, generateSummary } from '@/lib/extract';
 
 export const maxDuration = 300;
 
-export async function POST(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const provided = request.headers.get('x-cron-secret');
-    if (provided !== secret) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-  }
+export async function POST() {
   const db = getDb();
   const errors: string[] = [];
   let videosProcessed = 0;

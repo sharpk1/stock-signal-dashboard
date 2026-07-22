@@ -12,7 +12,6 @@ jobs:
       - name: Trigger fetch
         run: |
           curl -X POST "${{ secrets.APP_URL }}/api/fetch" \
-            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json" \
             --fail \
             --silent \
