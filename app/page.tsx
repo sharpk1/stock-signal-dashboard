@@ -83,7 +83,7 @@ export default function Page() {
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
   const [lastFetched, setLastFetched] = useState<string | null>(null);
-  const [fetchResult, setFetchResult] = useState<{ videosProcessed: number; tickersFound: number; errors: string[] } | null>(null);
+  const [fetchResult, setFetchResult] = useState<{ videosProcessed: number; tickersFound: number; errors: string[] } | { queued: true } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [modalQuote, setModalQuote] = useState<string | null>(null);
@@ -170,8 +170,10 @@ export default function Page() {
       const res = await fetch('/api/fetch', { method: 'POST' });
       const data = await res.json();
       setFetchResult(data);
-      setLastFetched(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
-      await loadLeaderboard(selectedChannel);
+      if (!('queued' in data)) {
+        setLastFetched(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
+        await loadLeaderboard(selectedChannel);
+      }
     } finally {
       setFetching(false);
     }
@@ -267,20 +269,31 @@ export default function Page() {
         {/* Fetch result banner */}
         {fetchResult && (
           <div className="mb-5 flex items-start gap-3 p-4 rounded-xl bg-white border border-gray-200 shadow-sm text-sm">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-            <div>
-              <span className="text-gray-700">
-                Processed <span className="font-semibold text-gray-900">{fetchResult.videosProcessed}</span> videos &mdash; found <span className="font-semibold text-gray-900">{fetchResult.tickersFound}</span> ticker mentions
-              </span>
-              {fetchResult.errors.length > 0 && (
-                <details className="mt-2">
-                  <summary className="text-amber-600 cursor-pointer text-xs">{fetchResult.errors.length} channel warnings</summary>
-                  <ul className="mt-1 text-amber-500 text-xs space-y-0.5 list-disc list-inside">
-                    {fetchResult.errors.map((e, i) => <li key={i}>{e}</li>)}
-                  </ul>
-                </details>
-              )}
-            </div>
+            {'queued' in fetchResult ? (
+              <>
+                <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+                <span className="text-gray-700">
+                  Fetch queued! The pipeline is running — data will update in <span className="font-semibold text-gray-900">~5 minutes</span>. Refresh the page after.
+                </span>
+              </>
+            ) : (
+              <>
+                <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                <div>
+                  <span className="text-gray-700">
+                    Processed <span className="font-semibold text-gray-900">{fetchResult.videosProcessed}</span> videos &mdash; found <span className="font-semibold text-gray-900">{fetchResult.tickersFound}</span> ticker mentions
+                  </span>
+                  {fetchResult.errors.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="text-amber-600 cursor-pointer text-xs">{fetchResult.errors.length} channel warnings</summary>
+                      <ul className="mt-1 text-amber-500 text-xs space-y-0.5 list-disc list-inside">
+                        {fetchResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                      </ul>
+                    </details>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 

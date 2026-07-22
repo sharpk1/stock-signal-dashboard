@@ -1,40 +1,11 @@
-import { NextResponse } from 'next/server';
 import { CHANNELS } from '@/lib/channels';
 import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript } from '@/lib/db';
 import { fetchRecentVideos, fetchTranscript } from '@/lib/youtube';
 import { fetchSubstackPosts, extractSubstackContent, SubstackPost } from '@/lib/substack';
 import { extractTickers, generateSummary } from '@/lib/extract';
 
-export const maxDuration = 300;
-
-export async function POST() {
-  if (process.env.NODE_ENV === 'production') {
-    const token = process.env.GITHUB_PAT;
-    if (!token) {
-      return NextResponse.json({ error: 'GITHUB_PAT not configured' }, { status: 500 });
-    }
-    const res = await fetch(
-      'https://api.github.com/repos/sharpk1/stock-signal-dashboard/actions/workflows/fetch.yml/dispatches',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ref: 'main' }),
-      }
-    );
-    if (!res.ok) {
-      const error = await res.text();
-      return NextResponse.json({ error: `GitHub API failed: ${error}` }, { status: 500 });
-    }
-    return NextResponse.json({ queued: true });
-  }
-
-  // Development: run fetch directly
+async function main() {
   const db = getDb();
-  const errors: string[] = [];
   let videosProcessed = 0;
   let tickersFound = 0;
 
@@ -49,9 +20,7 @@ export async function POST() {
         videos = await fetchRecentVideos(channel);
       }
     } catch (err) {
-      const msg = `${channel.name}: fetch failed — ${err instanceof Error ? err.message : err}`;
-      errors.push(msg);
-      console.error(msg);
+      console.error(`${channel.name}: fetch failed —`, err);
       continue;
     }
 
@@ -79,7 +48,7 @@ export async function POST() {
         continue;
       }
 
-      let transcript: string = '';
+      let transcript = '';
       if (existing.transcript) {
         transcript = existing.transcript;
       } else {
@@ -91,40 +60,25 @@ export async function POST() {
               try {
                 transcript = await fetchTranscript(youtubeVideoId);
               } catch {
-                if (!articleText) {
-                  const msg = `${channel.name} / ${video.videoId}: no transcript and no article text — skipping`;
-                  errors.push(msg);
-                  console.error(msg);
-                  continue;
-                }
+                if (!articleText) { console.error(`${channel.name} / ${video.videoId}: no transcript or article text`); continue; }
                 transcript = articleText;
               }
             } else {
-              if (!articleText) {
-                const msg = `${channel.name} / ${video.videoId}: empty body — skipping`;
-                errors.push(msg);
-                console.error(msg);
-                continue;
-              }
+              if (!articleText) { console.error(`${channel.name} / ${video.videoId}: empty body`); continue; }
               transcript = articleText;
             }
           } else {
             transcript = await fetchTranscript(video.videoId);
           }
         } catch (err) {
-          const msg = `${channel.name} / ${video.videoId}: transcript unavailable — ${err instanceof Error ? err.message : err}`;
-          errors.push(msg);
-          console.error(msg);
+          console.error(`${channel.name} / ${video.videoId}: transcript failed —`, err);
           continue;
         }
 
         let summary = '';
-        try {
-          summary = await generateSummary(transcript);
-        } catch (err) {
-          console.error(`${channel.name} / ${video.title}: summary generation failed — ${err instanceof Error ? err.message : err}`);
+        try { summary = await generateSummary(transcript); } catch (err) {
+          console.error(`${channel.name} / ${video.title}: summary failed —`, err);
         }
-
         updateVideoTranscript(db, videoRowId, transcript, summary);
       }
 
@@ -132,9 +86,7 @@ export async function POST() {
       try {
         mentions = await extractTickers(transcript, video.title);
       } catch (err) {
-        const msg = `${channel.name} / ${video.title}: Claude extraction failed — ${err instanceof Error ? err.message : err}`;
-        errors.push(msg);
-        console.error(msg);
+        console.error(`${channel.name} / ${video.title}: extraction failed —`, err);
         continue;
       }
 
@@ -155,5 +107,7 @@ export async function POST() {
     }
   }
 
-  return NextResponse.json({ success: true, videosProcessed, tickersFound, errors });
+  console.log(`\nDone: ${videosProcessed} videos, ${tickersFound} tickers`);
 }
+
+main().catch(err => { console.error(err); process.exit(1); });

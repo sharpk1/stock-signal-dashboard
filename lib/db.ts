@@ -1,12 +1,22 @@
 import Database, { Database as DatabaseType } from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 import { Channel } from '@/lib/channels';
 
 let _db: DatabaseType | null = null;
 
 export function getDb(): DatabaseType {
   if (!_db) {
-    const dbPath = path.join(process.cwd(), 'data', 'signals.db');
+    let dbPath: string;
+    if (process.env.NODE_ENV === 'production') {
+      const tmpPath = '/tmp/signals.db';
+      if (!fs.existsSync(tmpPath)) {
+        fs.copyFileSync(path.join(process.cwd(), 'data', 'signals.db'), tmpPath);
+      }
+      dbPath = tmpPath;
+    } else {
+      dbPath = path.join(process.cwd(), 'data', 'signals.db');
+    }
     _db = new Database(dbPath);
     initDb(_db);
   }
