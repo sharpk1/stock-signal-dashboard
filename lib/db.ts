@@ -6,7 +6,9 @@ let _db: DatabaseType | null = null;
 
 export function getDb(): DatabaseType {
   if (!_db) {
-    const dbPath = path.join(process.cwd(), 'data', 'signals.db');
+    const dbPath = process.env.NODE_ENV === 'production'
+      ? '/tmp/signals.db'
+      : path.join(process.cwd(), 'data', 'signals.db');
     _db = new Database(dbPath);
     initDb(_db);
   }
