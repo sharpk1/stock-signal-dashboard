@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { CHANNELS } from '@/lib/channels';
-import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert } from '@/lib/db';
+import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript } from '@/lib/db';
 import { fetchRecentVideos, fetchTranscript } from '@/lib/youtube';
 import { fetchSubstackPosts, extractSubstackContent, SubstackPost } from '@/lib/substack';
 import { extractTickers, generateSummary } from '@/lib/extract';
@@ -135,26 +135,5 @@ export async function POST() {
     }
   }
 
-  // Detect new convergences and save alerts
-  const newAlerts: string[] = [];
-  const leaderboard = getLeaderboard(db, undefined, 30);
-  for (const row of leaderboard) {
-    if (row.rr_mentions > 0 && row.channel_count >= 2) {
-      const channels = row.channels;
-      const quotes = db.prepare(`
-        SELECT tm.quote, c.name AS channel_name
-        FROM ticker_mentions tm
-        JOIN videos v ON tm.video_id = v.id
-        JOIN channels c ON v.channel_id = c.channel_id
-        WHERE tm.ticker = ? AND tm.quote IS NOT NULL
-        ORDER BY c.weight DESC
-        LIMIT 4
-      `).all(row.ticker) as { quote: string; channel_name: string }[];
-      const quotesJson = JSON.stringify(quotes);
-      const isNew = saveConvergenceAlert(db, row.ticker, channels, quotesJson);
-      if (isNew) newAlerts.push(row.ticker);
-    }
-  }
-
-  return NextResponse.json({ success: true, videosProcessed, tickersFound, errors, newAlerts });
+  return NextResponse.json({ success: true, videosProcessed, tickersFound, errors });
 }
