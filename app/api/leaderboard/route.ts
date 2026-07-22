@@ -11,9 +11,10 @@ export interface LeaderboardEntry extends LeaderboardRow {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const channel = searchParams.get('channel') ?? undefined;
+  const days = parseInt(searchParams.get('days') ?? '7') || 7;
   const db = getDb();
-  const rows = getLeaderboard(db, channel);
-  const details = getMentionDetails(db, channel);
+  const rows = getLeaderboard(db, channel, days);
+  const details = getMentionDetails(db, channel, days);
 
   const detailsByTicker: Record<string, MentionDetail[]> = {};
   for (const d of details) {

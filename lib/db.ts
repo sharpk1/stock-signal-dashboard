@@ -49,7 +49,19 @@ export function initDb(db: DatabaseType): void {
   try { db.exec('ALTER TABLE videos ADD COLUMN transcript TEXT'); } catch { /* already exists */ }
   try { db.exec('ALTER TABLE videos ADD COLUMN summary TEXT'); } catch { /* already exists */ }
 
+  try { db.exec('ALTER TABLE videos ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0'); } catch { /* already exists */ }
+
   db.exec(`
+    CREATE TABLE IF NOT EXISTS convergence_alerts (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticker     TEXT NOT NULL,
+      channels   TEXT NOT NULL,
+      quotes     TEXT,
+      read       INTEGER NOT NULL DEFAULT 0,
+      alerted_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(ticker, channels)
+    );
+
     CREATE TABLE IF NOT EXISTS memories (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       content    TEXT NOT NULL,
@@ -117,7 +129,7 @@ export interface LeaderboardRow {
   rr_mentions: number;
 }
 
-export function getLeaderboard(db: DatabaseType, channelName?: string): LeaderboardRow[] {
+export function getLeaderboard(db: DatabaseType, channelName?: string, days: number = 7): LeaderboardRow[] {
   const channelFilter = channelName ? 'AND c.name = ?' : '';
   const params = channelName ? [channelName] : [];
   return db.prepare(`
@@ -132,7 +144,7 @@ export function getLeaderboard(db: DatabaseType, channelName?: string): Leaderbo
     FROM ticker_mentions tm
     JOIN videos v   ON tm.video_id  = v.id
     JOIN channels c ON v.channel_id = c.channel_id
-    WHERE rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-3 days')
+    WHERE (rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-${days} days') OR v.pinned = 1)
     ${channelFilter}
     GROUP BY tm.ticker
     ORDER BY weighted_score DESC
@@ -150,7 +162,7 @@ export interface MentionDetail {
   fetched_at: string;
 }
 
-export function getMentionDetails(db: DatabaseType, channelName?: string): MentionDetail[] {
+export function getMentionDetails(db: DatabaseType, channelName?: string, days: number = 7): MentionDetail[] {
   const channelFilter = channelName ? 'AND c.name = ?' : '';
   const params = channelName ? [channelName] : [];
   return db.prepare(`
@@ -166,10 +178,50 @@ export function getMentionDetails(db: DatabaseType, channelName?: string): Menti
     FROM ticker_mentions tm
     JOIN videos v   ON tm.video_id  = v.id
     JOIN channels c ON v.channel_id = c.channel_id
-    WHERE rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-3 days')
+    WHERE (rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-${days} days') OR v.pinned = 1)
     ${channelFilter}
     ORDER BY tm.ticker, c.weight DESC
   `).all(...params) as MentionDetail[];
+}
+
+export function toggleVideoPin(db: DatabaseType, videoId: string): boolean {
+  const row = db.prepare('SELECT id, pinned FROM videos WHERE video_id = ?').get(videoId) as { id: number; pinned: number } | undefined;
+  if (!row) throw new Error(`Video not found: ${videoId}`);
+  const newPinned = row.pinned ? 0 : 1;
+  db.prepare('UPDATE videos SET pinned = ? WHERE id = ?').run(newPinned, row.id);
+  return newPinned === 1;
+}
+
+export interface ConvergenceAlert {
+  id: number;
+  ticker: string;
+  channels: string;
+  quotes: string | null;
+  read: number;
+  alerted_at: string;
+}
+
+export function saveConvergenceAlert(
+  db: DatabaseType,
+  ticker: string,
+  channels: string,
+  quotes: string
+): boolean {
+  const result = db.prepare(`
+    INSERT OR IGNORE INTO convergence_alerts (ticker, channels, quotes)
+    VALUES (?, ?, ?)
+  `).run(ticker, channels, quotes);
+  return result.changes > 0;
+}
+
+export function getAlerts(db: DatabaseType): { alerts: ConvergenceAlert[]; unreadCount: number } {
+  const alerts = db.prepare('SELECT * FROM convergence_alerts ORDER BY alerted_at DESC').all() as ConvergenceAlert[];
+  const unreadCount = alerts.filter(a => a.read === 0).length;
+  return { alerts, unreadCount };
+}
+
+export function markAlertRead(db: DatabaseType, id: number): void {
+  db.prepare('UPDATE convergence_alerts SET read = 1 WHERE id = ?').run(id);
 }
 
 export function updateVideoTranscript(

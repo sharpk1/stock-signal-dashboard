@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import React from 'react';
+import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { LeaderboardEntry } from '@/app/api/leaderboard/route';
 import { CHANNELS } from '@/lib/channels';
 import type { ChannelWinRate } from '@/app/api/winrate/route';
 import type { VideoUrl } from '@/app/api/videos/route';
+import type { ConvergenceAlert } from '@/lib/db';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
@@ -92,7 +94,11 @@ export default function Page() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'signals' | 'track-record'>('signals');
+  const [activeTab, setActiveTab] = useState<'signals' | 'track-record' | 'notifications'>('signals');
+  const [leaderboardDays, setLeaderboardDays] = useState<7 | 14 | 30>(7);
+  const [alerts, setAlerts] = useState<ConvergenceAlert[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [alertsLoading, setAlertsLoading] = useState(false);
   const [winRateData, setWinRateData] = useState<ChannelWinRate[]>([]);
   const [winRateDays, setWinRateDays] = useState<30 | 60 | 90>(30);
   const [expandedWinChannel, setExpandedWinChannel] = useState<string | null>(null);
@@ -102,11 +108,10 @@ export default function Page() {
   const [exportDays, setExportDays] = useState<7 | 30 | 0>(7);
   const [copied, setCopied] = useState(false);
 
-  const loadLeaderboard = useCallback(async (channel?: string | null) => {
+  const loadLeaderboard = useCallback(async (days: number) => {
     setLoading(true);
     try {
-      const url = channel ? `/api/leaderboard?channel=${encodeURIComponent(channel)}` : '/api/leaderboard';
-      const res = await fetch(url);
+      const res = await fetch(`/api/leaderboard?days=${days}`);
       const data = await res.json();
       setEntries(data);
     } finally {
@@ -114,13 +119,26 @@ export default function Page() {
     }
   }, []);
 
-  function handleChannelFilter(channel: string | null) {
-    setSelectedChannel(channel);
-    setExpanded(null);
-    loadLeaderboard(channel);
+  const loadAlerts = useCallback(async () => {
+    setAlertsLoading(true);
+    try {
+      const res = await fetch('/api/alerts');
+      const data = await res.json() as { alerts: ConvergenceAlert[]; unreadCount: number };
+      setAlerts(data.alerts);
+      setUnreadCount(data.unreadCount);
+    } finally {
+      setAlertsLoading(false);
+    }
+  }, []);
+
+  async function markRead(id: number) {
+    await fetch(`/api/alerts/${id}`, { method: 'PATCH' });
+    setAlerts(prev => prev.map(a => a.id === id ? { ...a, read: 1 } : a));
+    setUnreadCount(prev => Math.max(0, prev - 1));
   }
 
-  useEffect(() => { loadLeaderboard(null); }, [loadLeaderboard]);
+  useEffect(() => { loadLeaderboard(leaderboardDays); }, [loadLeaderboard, leaderboardDays]);
+  useEffect(() => { loadAlerts(); }, [loadAlerts]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -171,7 +189,7 @@ export default function Page() {
       const data = await res.json();
       setFetchResult(data);
       setLastFetched(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
-      await loadLeaderboard(selectedChannel);
+      await Promise.all([loadLeaderboard(leaderboardDays), loadAlerts()]);
     } finally {
       setFetching(false);
     }
@@ -302,32 +320,49 @@ export default function Page() {
           >
             Track Record
           </button>
+          <button
+            onClick={() => { setActiveTab('notifications'); if (activeTab !== 'notifications') loadAlerts(); }}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+              activeTab === 'notifications' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Notifications
+            {unreadCount > 0 && (
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold">
+                {unreadCount}
+              </span>
+            )}
+          </button>
         </div>
 
         {activeTab === 'signals' && (<>
-        {/* Channel filter pills */}
-        <div className="flex flex-wrap gap-2 mb-3">
-          <button
-            onClick={() => handleChannelFilter(null)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              selectedChannel === null
-                ? 'bg-blue-600 text-white'
-                : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
-            }`}
-          >
-            All Channels
-          </button>
+        {/* Channel project links */}
+        <div className="flex flex-wrap gap-2 mb-4">
           {CHANNELS.map(ch => (
-            <button
+            <Link
               key={ch.id}
-              onClick={() => handleChannelFilter(ch.name)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                selectedChannel === ch.name
+              href={`/channel/${ch.channelId}`}
+              className="px-3 py-1.5 rounded-full text-xs font-medium bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600 transition-colors"
+            >
+              {ch.name} →
+            </Link>
+          ))}
+        </div>
+
+        {/* Leaderboard time range selector */}
+        <div className="flex items-center gap-1 mb-4">
+          <span className="text-xs text-gray-500 mr-1">Window:</span>
+          {([7, 14, 30] as const).map(d => (
+            <button
+              key={d}
+              onClick={() => setLeaderboardDays(d)}
+              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                leaderboardDays === d
                   ? 'bg-blue-600 text-white'
                   : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
               }`}
             >
-              {ch.name}
+              {d}d
             </button>
           ))}
         </div>
@@ -438,6 +473,63 @@ export default function Page() {
           </div>
         )}
         </>)}
+
+        {activeTab === 'notifications' && (
+          <div>
+            {alertsLoading ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-3">
+                <svg className="animate-spin h-6 w-6 text-blue-500" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                <span className="text-gray-400 text-sm">Loading alerts…</span>
+              </div>
+            ) : alerts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-white border border-gray-200 shadow-sm flex items-center justify-center text-2xl">⚡</div>
+                <div>
+                  <p className="text-gray-800 font-medium">No convergence alerts yet</p>
+                  <p className="text-gray-500 text-sm mt-1">Alerts appear when RR and another channel both mention the same ticker</p>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-gray-200 overflow-hidden shadow-sm bg-white divide-y divide-gray-100">
+                {alerts.map(alert => {
+                  const quotes = (() => { try { return JSON.parse(alert.quotes ?? '[]') as { quote: string; channel_name: string }[]; } catch { return []; } })();
+                  const otherChannels = alert.channels.split(',').filter(c => c.trim() !== 'Robert Reynolds').map(c => c.trim());
+                  return (
+                    <div
+                      key={alert.id}
+                      onClick={() => alert.read === 0 && markRead(alert.id)}
+                      className={`px-5 py-4 cursor-pointer transition-colors ${alert.read === 0 ? 'bg-amber-50/40 hover:bg-amber-50' : 'hover:bg-gray-50'}`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-amber-500 text-sm">⚡</span>
+                          <span className="font-mono font-bold text-blue-600 tracking-wide">{alert.ticker}</span>
+                          <span className="text-gray-500 text-sm">— RR + {otherChannels.join(', ')}</span>
+                          {alert.read === 0 && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500 text-white">NEW</span>
+                          )}
+                        </div>
+                        <span className="text-xs text-gray-400 shrink-0">{alert.alerted_at.slice(0, 10)}</span>
+                      </div>
+                      {quotes.length > 0 && (
+                        <div className="mt-2 space-y-1.5 pl-5">
+                          {quotes.map((q, i) => (
+                            <p key={i} className="text-xs text-gray-600 italic">
+                              <span className="font-medium not-italic text-gray-700">{q.channel_name}:</span> &ldquo;{q.quote.length > 140 ? q.quote.slice(0, 140) + '…' : q.quote}&rdquo;
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {activeTab === 'track-record' && (
           <div>
