@@ -90,10 +90,10 @@ describe('getLeaderboard', () => {
     expect(rows[1].ticker).toBe('NOW');
   });
 
-  it('excludes mentions from videos older than 24h', () => {
+  it('excludes mentions from videos older than the default 7-day window', () => {
     const db = makeTestDb();
     saveChannel(db, { id: 1, channelId: 'UC123', handle: '@c1', name: 'C1', weight: 0.5 });
-    const oldDate = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    const oldDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
     const v = saveVideo(db, { videoId: 'v1', channelId: 'UC123', title: 'Old', publishedAt: oldDate });
     saveMention(db, { videoRowId: v, ticker: 'AAPL', company: 'Apple', sentiment: 'bullish', conviction: 90, quote: '' });
     const rows = getLeaderboard(db);

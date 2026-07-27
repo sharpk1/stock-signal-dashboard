@@ -1,14 +1,20 @@
 import { NextResponse } from 'next/server';
 import { CHANNELS } from '@/lib/channels';
-import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript } from '@/lib/db';
+import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert } from '@/lib/db';
 import { fetchRecentVideos, fetchTranscript } from '@/lib/youtube';
 import { fetchSubstackPosts, extractSubstackContent, SubstackPost } from '@/lib/substack';
 import { extractTickers, generateSummary } from '@/lib/extract';
 
 export const maxDuration = 300;
 
-export async function POST() {
-  // Run the fetch directly in this instance and write to the DB.
+export async function POST(request: Request) {
+  const secret = process.env.CRON_SECRET;
+  if (secret) {
+    const provided = request.headers.get('x-cron-secret');
+    if (provided !== secret) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
+  }
   const db = getDb();
   const errors: string[] = [];
   let videosProcessed = 0;
@@ -44,6 +50,7 @@ export async function POST() {
         publishedAt: video.publishedAt,
       });
 
+      // Check processing state
       const existing = db.prepare(`
         SELECT v.transcript,
                (SELECT COUNT(*) FROM ticker_mentions WHERE video_id = v.id) AS mention_count
@@ -51,14 +58,17 @@ export async function POST() {
       `).get(videoRowId) as { transcript: string | null; mention_count: number };
 
       if (existing.transcript && existing.mention_count > 0) {
+        // fully processed — skip
         console.log(`Skipped (already processed): ${video.title}`);
         continue;
       }
 
       let transcript: string = '';
       if (existing.transcript) {
+        // transcript stored but extraction previously failed — reuse stored transcript
         transcript = existing.transcript;
       } else {
+        // fresh content — fetch transcript or use article text
         try {
           if (channel.source === 'substack') {
             const post = video as SubstackPost;
@@ -73,6 +83,7 @@ export async function POST() {
                   console.error(msg);
                   continue;
                 }
+                console.warn(`${channel.name} / ${video.videoId}: YouTube transcript failed, falling back to article text`);
                 transcript = articleText;
               }
             } else {
@@ -131,5 +142,26 @@ export async function POST() {
     }
   }
 
-  return NextResponse.json({ success: true, videosProcessed, tickersFound, errors });
+  // Detect new convergences and save alerts
+  const newAlerts: string[] = [];
+  const leaderboard = getLeaderboard(db, undefined, 30);
+  for (const row of leaderboard) {
+    if (row.rr_mentions > 0 && row.channel_count >= 2) {
+      const channels = row.channels;
+      const quotes = db.prepare(`
+        SELECT tm.quote, c.name AS channel_name
+        FROM ticker_mentions tm
+        JOIN videos v ON tm.video_id = v.id
+        JOIN channels c ON v.channel_id = c.channel_id
+        WHERE tm.ticker = ? AND tm.quote IS NOT NULL
+        ORDER BY c.weight DESC
+        LIMIT 4
+      `).all(row.ticker) as { quote: string; channel_name: string }[];
+      const quotesJson = JSON.stringify(quotes);
+      const isNew = saveConvergenceAlert(db, row.ticker, channels, quotesJson);
+      if (isNew) newAlerts.push(row.ticker);
+    }
+  }
+
+  return NextResponse.json({ success: true, videosProcessed, tickersFound, errors, newAlerts });
 }

@@ -29,12 +29,18 @@ describe('parseRssFeed', () => {
     expect(parseRssFeed(empty)).toEqual([]);
   });
 
-  it('filters to videos published within the last 24 hours', () => {
-    const recent = parseRssFeed(SAMPLE_RSS).filter(v => {
-      const age = Date.now() - new Date(v.publishedAt).getTime();
-      return age < 24 * 60 * 60 * 1000;
-    });
+  it('filters to videos published within the 30-day fetch window', () => {
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    const recentDate = new Date(now - 2 * day).toISOString();
+    const oldDate = new Date(now - 40 * day).toISOString();
+    const rss = `<?xml version="1.0"?><feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns="http://www.w3.org/2005/Atom">
+      <entry><yt:videoId>recent1</yt:videoId><title>Recent</title><published>${recentDate}</published></entry>
+      <entry><yt:videoId>old1</yt:videoId><title>Old</title><published>${oldDate}</published></entry>
+    </feed>`;
+    const cutoff = now - 30 * day;
+    const recent = parseRssFeed(rss).filter(v => new Date(v.publishedAt).getTime() >= cutoff);
     expect(recent).toHaveLength(1);
-    expect(recent[0].videoId).toBe('abc123');
+    expect(recent[0].videoId).toBe('recent1');
   });
 });
