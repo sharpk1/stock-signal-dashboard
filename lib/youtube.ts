@@ -59,7 +59,7 @@ export async function fetchTranscript(videoId: string): Promise<string> {
   const useProxy = Boolean(process.env.WEBSHARE_PROXY_USERNAME && process.env.WEBSHARE_PROXY_PASSWORD);
   // Behind the rotating proxy, retry so each attempt draws a fresh exit IP;
   // some IPs return empty caption tracks even when a transcript exists.
-  const maxAttempts = useProxy ? 5 : 1;
+  const maxAttempts = useProxy ? 3 : 1;
   let lastErr: unknown = new Error('no transcript');
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

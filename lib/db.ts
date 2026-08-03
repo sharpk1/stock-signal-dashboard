@@ -69,6 +69,7 @@ export async function initDb(db: Client): Promise<void> {
     'ALTER TABLE videos ADD COLUMN transcript TEXT',
     'ALTER TABLE videos ADD COLUMN summary TEXT',
     'ALTER TABLE videos ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE videos ADD COLUMN transcript_attempts INTEGER NOT NULL DEFAULT 0',
   ]) {
     try {
       await db.execute(stmt);
@@ -147,6 +148,16 @@ export async function saveVideo(
     },
   });
   return Number(result.lastInsertRowid);
+}
+
+// Record a failed transcript attempt so genuinely caption-less videos are
+// skipped after a few runs instead of being retried on every fetch (which
+// otherwise burns the whole time budget forever).
+export async function bumpTranscriptAttempts(db: Client, videoRowId: number): Promise<void> {
+  await db.execute({
+    sql: 'UPDATE videos SET transcript_attempts = transcript_attempts + 1 WHERE id = ?',
+    args: [videoRowId],
+  });
 }
 
 export async function saveMention(

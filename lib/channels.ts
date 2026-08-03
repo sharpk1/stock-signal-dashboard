@@ -25,7 +25,7 @@ export const CHANNELS: Channel[] = [
   },
   {
     id: 4,
-    channelId: "UCtgIZv41-YwzASc5BdF-7IA",
+    channelId: "UCOHxDwCcOzBaLkeTazanwcw",
     handle: "@bravosresearch",
     name: "Bravo's Research",
     weight: 0.1,

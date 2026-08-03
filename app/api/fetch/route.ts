@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { CHANNELS } from '@/lib/channels';
-import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert } from '@/lib/db';
+import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert, bumpTranscriptAttempts } from '@/lib/db';
 import { fetchRecentVideos, fetchTranscript } from '@/lib/youtube';
 import { fetchSubstackPosts, extractSubstackContent, SubstackPost } from '@/lib/substack';
 import { extractTickers, generateSummary } from '@/lib/extract';
@@ -26,13 +26,19 @@ export async function POST(request: Request) {
   }
 }
 
+const MAX_TRANSCRIPT_ATTEMPTS = 3; // give up on a video after this many failed runs
+const TIME_BUDGET_MS = 240_000;    // stop gracefully before Vercel's 300s hard limit
+
 async function runFetch() {
   const db = await getDb();
   const errors: string[] = [];
   let videosProcessed = 0;
   let tickersFound = 0;
+  const deadline = Date.now() + TIME_BUDGET_MS;
+  let timedOut = false;
 
   for (const channel of CHANNELS) {
+    if (timedOut) break;
     await saveChannel(db, channel);
 
     let videos: Array<SubstackPost | Awaited<ReturnType<typeof fetchRecentVideos>>[number]>;
@@ -55,6 +61,13 @@ async function runFetch() {
     }
 
     for (const video of videos) {
+      if (Date.now() > deadline) {
+        timedOut = true;
+        errors.push('time budget reached — stopping early; run again to continue');
+        console.log('Time budget reached, stopping early.');
+        break;
+      }
+
       const videoRowId = await saveVideo(db, {
         videoId: video.videoId,
         channelId: channel.channelId,
@@ -65,16 +78,22 @@ async function runFetch() {
       // Check processing state
       const existing = (await db.execute({
         sql: `
-        SELECT v.transcript,
+        SELECT v.transcript, v.transcript_attempts,
                (SELECT COUNT(*) FROM ticker_mentions WHERE video_id = v.id) AS mention_count
         FROM videos v WHERE v.id = ?
       `,
         args: [videoRowId],
-      })).rows[0] as unknown as { transcript: string | null; mention_count: number };
+      })).rows[0] as unknown as { transcript: string | null; transcript_attempts: number; mention_count: number };
 
       if (existing.transcript && existing.mention_count > 0) {
         // fully processed — skip
         console.log(`Skipped (already processed): ${video.title}`);
+        continue;
+      }
+
+      if (!existing.transcript && existing.transcript_attempts >= MAX_TRANSCRIPT_ATTEMPTS) {
+        // repeatedly couldn't get a transcript (likely no captions) — stop retrying
+        console.log(`Skipped (no transcript after ${existing.transcript_attempts} attempts): ${video.title}`);
         continue;
       }
 
@@ -114,6 +133,7 @@ async function runFetch() {
             transcript = await fetchTranscript(video.videoId);
           }
         } catch (err) {
+          await bumpTranscriptAttempts(db, videoRowId);
           const msg = `${channel.name} / ${video.videoId}: transcript unavailable — ${err instanceof Error ? err.message : err}`;
           errors.push(msg);
           console.error(msg);
@@ -181,5 +201,5 @@ async function runFetch() {
     }
   }
 
-  return NextResponse.json({ success: true, videosProcessed, tickersFound, errors, newAlerts });
+  return NextResponse.json({ success: true, timedOut, videosProcessed, tickersFound, errors, newAlerts });
 }
