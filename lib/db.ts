@@ -9,10 +9,13 @@ let _initPromise: Promise<void> | null = null;
 
 export async function getDb(): Promise<Client> {
   if (!_client) {
-    const url =
+    // .trim() guards against trailing newlines/whitespace from pasted env vars —
+    // an untrimmed token becomes an invalid HTTP Authorization header value.
+    const url = (
       process.env.TURSO_DATABASE_URL ??
-      `file:${path.join(process.cwd(), 'data', 'signals.db')}`;
-    const authToken = process.env.TURSO_AUTH_TOKEN;
+      `file:${path.join(process.cwd(), 'data', 'signals.db')}`
+    ).trim();
+    const authToken = process.env.TURSO_AUTH_TOKEN?.trim();
     // Remote (libsql:// / https) uses the pure-JS web client — no native addon,
     // which is what serverless (Vercel) needs. Local file: uses the native node
     // client for embedded SQLite. Dynamic import so the native client is never
