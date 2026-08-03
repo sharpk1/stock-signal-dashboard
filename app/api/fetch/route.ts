@@ -15,6 +15,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
   }
+  try {
+    return await runFetch();
+  } catch (err) {
+    console.error('fetch route failed:', err);
+    return NextResponse.json(
+      { error: err instanceof Error ? `${err.message}` : String(err) },
+      { status: 500 }
+    );
+  }
+}
+
+async function runFetch() {
   const db = await getDb();
   const errors: string[] = [];
   let videosProcessed = 0;

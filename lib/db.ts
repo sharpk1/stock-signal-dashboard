@@ -1,4 +1,4 @@
-import { createClient, type Client } from '@libsql/client';
+import type { Client } from '@libsql/client';
 import path from 'path';
 import { Channel } from '@/lib/channels';
 
@@ -13,6 +13,13 @@ export async function getDb(): Promise<Client> {
       process.env.TURSO_DATABASE_URL ??
       `file:${path.join(process.cwd(), 'data', 'signals.db')}`;
     const authToken = process.env.TURSO_AUTH_TOKEN;
+    // Remote (libsql:// / https) uses the pure-JS web client — no native addon,
+    // which is what serverless (Vercel) needs. Local file: uses the native node
+    // client for embedded SQLite. Dynamic import so the native client is never
+    // loaded in a remote/serverless environment.
+    const { createClient } = url.startsWith('file:')
+      ? await import('@libsql/client')
+      : await import('@libsql/client/web');
     _client = createClient({ url, authToken });
   }
   if (!_initPromise) _initPromise = initDb(_client);
