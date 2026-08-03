@@ -12,11 +12,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'question is required' }, { status: 400 });
   }
 
-  const db = getDb();
+  const db = await getDb();
   const channelFilter = channelName ? 'AND c.name = ?' : '';
   const channelParams = channelName ? [channelName] : [];
 
-  const rows = db.prepare(`
+  const rows = (await db.execute({
+    sql: `
     SELECT tm.ticker, tm.company, tm.sentiment, tm.conviction, tm.quote,
            v.title, v.published_at, c.name AS channel_name
     FROM ticker_mentions tm
@@ -25,19 +26,24 @@ export async function POST(request: Request) {
     WHERE 1=1 ${channelFilter}
     ORDER BY v.published_at DESC
     LIMIT ${channelName ? 200 : 100}
-  `).all(...channelParams) as {
+  `,
+    args: channelParams,
+  })).rows as unknown as {
     ticker: string; company: string; sentiment: string; conviction: number;
     quote: string; title: string; published_at: string; channel_name: string;
   }[];
 
-  const summaryRows = db.prepare(`
+  const summaryRows = (await db.execute({
+    sql: `
     SELECT v.title, v.published_at, v.summary, c.name AS channel_name
     FROM videos v
     JOIN channels c ON c.channel_id = v.channel_id
     WHERE v.summary IS NOT NULL AND v.summary != '' ${channelFilter}
     ORDER BY v.published_at DESC
     LIMIT ${channelName ? 50 : 20}
-  `).all(...channelParams) as {
+  `,
+    args: channelParams,
+  })).rows as unknown as {
     title: string; published_at: string; summary: string; channel_name: string;
   }[];
 
@@ -68,6 +74,6 @@ export async function POST(request: Request) {
   });
 
   const answer = response.content[0].type === 'text' ? response.content[0].text : 'No answer found.';
-  saveConversation(db, question, answer);
+  await saveConversation(db, question, answer);
   return NextResponse.json({ answer });
 }

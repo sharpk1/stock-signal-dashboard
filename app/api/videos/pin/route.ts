@@ -7,9 +7,9 @@ export async function PATCH(request: Request) {
   if (!videoId) {
     return NextResponse.json({ error: 'videoId is required' }, { status: 400 });
   }
-  const db = getDb();
+  const db = await getDb();
   try {
-    const pinned = toggleVideoPin(db, videoId);
+    const pinned = await toggleVideoPin(db, videoId);
     return NextResponse.json({ pinned });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 404 });

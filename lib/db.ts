@@ -1,20 +1,27 @@
-import Database, { Database as DatabaseType } from 'better-sqlite3';
+import { createClient, type Client } from '@libsql/client';
 import path from 'path';
 import { Channel } from '@/lib/channels';
 
-let _db: DatabaseType | null = null;
+export type Db = Client;
 
-export function getDb(): DatabaseType {
-  if (!_db) {
-    const dbPath = path.join(process.cwd(), 'data', 'signals.db');
-    _db = new Database(dbPath);
-    initDb(_db);
+let _client: Client | null = null;
+let _initPromise: Promise<void> | null = null;
+
+export async function getDb(): Promise<Client> {
+  if (!_client) {
+    const url =
+      process.env.TURSO_DATABASE_URL ??
+      `file:${path.join(process.cwd(), 'data', 'signals.db')}`;
+    const authToken = process.env.TURSO_AUTH_TOKEN;
+    _client = createClient({ url, authToken });
   }
-  return _db;
+  if (!_initPromise) _initPromise = initDb(_client);
+  await _initPromise;
+  return _client;
 }
 
-export function initDb(db: DatabaseType): void {
-  db.exec(`
+export async function initDb(db: Client): Promise<void> {
+  await db.executeMultiple(`
     CREATE TABLE IF NOT EXISTS channels (
       id         INTEGER PRIMARY KEY,
       channel_id TEXT NOT NULL UNIQUE,
@@ -45,13 +52,20 @@ export function initDb(db: DatabaseType): void {
     );
   `);
 
-  // Add transcript/summary columns if not yet present (idempotent)
-  try { db.exec('ALTER TABLE videos ADD COLUMN transcript TEXT'); } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE videos ADD COLUMN summary TEXT'); } catch { /* already exists */ }
+  // Add transcript/summary/pinned columns if not yet present (idempotent)
+  for (const stmt of [
+    'ALTER TABLE videos ADD COLUMN transcript TEXT',
+    'ALTER TABLE videos ADD COLUMN summary TEXT',
+    'ALTER TABLE videos ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0',
+  ]) {
+    try {
+      await db.execute(stmt);
+    } catch {
+      /* column already exists */
+    }
+  }
 
-  try { db.exec('ALTER TABLE videos ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0'); } catch { /* already exists */ }
-
-  db.exec(`
+  await db.executeMultiple(`
     CREATE TABLE IF NOT EXISTS convergence_alerts (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       ticker     TEXT NOT NULL,
@@ -78,32 +92,53 @@ export function initDb(db: DatabaseType): void {
   `);
 }
 
-export function saveChannel(db: DatabaseType, channel: Channel): void {
-  db.prepare(`
-    INSERT INTO channels (id, channel_id, handle, name, weight)
-    VALUES (@id, @channelId, @handle, @name, @weight)
-    ON CONFLICT(channel_id) DO UPDATE SET
-      handle = excluded.handle,
-      name   = excluded.name,
-      weight = excluded.weight
-  `).run(channel);
+export async function saveChannel(db: Client, channel: Channel): Promise<void> {
+  await db.execute({
+    sql: `
+      INSERT INTO channels (id, channel_id, handle, name, weight)
+      VALUES (:id, :channelId, :handle, :name, :weight)
+      ON CONFLICT(channel_id) DO UPDATE SET
+        handle = excluded.handle,
+        name   = excluded.name,
+        weight = excluded.weight
+    `,
+    args: {
+      id: channel.id,
+      channelId: channel.channelId,
+      handle: channel.handle,
+      name: channel.name,
+      weight: channel.weight,
+    },
+  });
 }
 
-export function saveVideo(
-  db: DatabaseType,
+export async function saveVideo(
+  db: Client,
   video: { videoId: string; channelId: string; title: string; publishedAt: string }
-): number {
-  const existing = db.prepare('SELECT id FROM videos WHERE video_id = ?').get(video.videoId) as { id: number } | undefined;
-  if (existing) return existing.id;
-  const result = db.prepare(`
-    INSERT INTO videos (video_id, channel_id, title, published_at)
-    VALUES (@videoId, @channelId, @title, @publishedAt)
-  `).run(video);
+): Promise<number> {
+  const existing = await db.execute({
+    sql: 'SELECT id FROM videos WHERE video_id = ?',
+    args: [video.videoId],
+  });
+  if (existing.rows.length > 0) return Number(existing.rows[0].id);
+
+  const result = await db.execute({
+    sql: `
+      INSERT INTO videos (video_id, channel_id, title, published_at)
+      VALUES (:videoId, :channelId, :title, :publishedAt)
+    `,
+    args: {
+      videoId: video.videoId,
+      channelId: video.channelId,
+      title: video.title,
+      publishedAt: video.publishedAt,
+    },
+  });
   return Number(result.lastInsertRowid);
 }
 
-export function saveMention(
-  db: DatabaseType,
+export async function saveMention(
+  db: Client,
   mention: {
     videoRowId: number;
     ticker: string;
@@ -112,11 +147,21 @@ export function saveMention(
     conviction: number;
     quote: string | null;
   }
-): void {
-  db.prepare(`
-    INSERT OR IGNORE INTO ticker_mentions (video_id, ticker, company, sentiment, conviction, quote)
-    VALUES (@videoRowId, @ticker, @company, @sentiment, @conviction, @quote)
-  `).run(mention);
+): Promise<void> {
+  await db.execute({
+    sql: `
+      INSERT OR IGNORE INTO ticker_mentions (video_id, ticker, company, sentiment, conviction, quote)
+      VALUES (:videoRowId, :ticker, :company, :sentiment, :conviction, :quote)
+    `,
+    args: {
+      videoRowId: mention.videoRowId,
+      ticker: mention.ticker,
+      company: mention.company,
+      sentiment: mention.sentiment,
+      conviction: mention.conviction,
+      quote: mention.quote,
+    },
+  });
 }
 
 export interface LeaderboardRow {
@@ -129,26 +174,30 @@ export interface LeaderboardRow {
   rr_mentions: number;
 }
 
-export function getLeaderboard(db: DatabaseType, channelName?: string, days: number = 7): LeaderboardRow[] {
+export async function getLeaderboard(db: Client, channelName?: string, days: number = 7): Promise<LeaderboardRow[]> {
   const channelFilter = channelName ? 'AND c.name = ?' : '';
   const params = channelName ? [channelName] : [];
-  return db.prepare(`
-    SELECT
-      tm.ticker,
-      tm.company,
-      COUNT(DISTINCT v.channel_id)  AS channel_count,
-      COUNT(*)                       AS mention_count,
-      CAST(ROUND(SUM(tm.conviction * c.weight) / SUM(c.weight)) AS INTEGER) AS weighted_score,
-      GROUP_CONCAT(DISTINCT c.name)  AS channels,
-      SUM(CASE WHEN c.name = 'Robert Reynolds' THEN 1 ELSE 0 END) AS rr_mentions
-    FROM ticker_mentions tm
-    JOIN videos v   ON tm.video_id  = v.id
-    JOIN channels c ON v.channel_id = c.channel_id
-    WHERE (rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-${days} days') OR v.pinned = 1)
-    ${channelFilter}
-    GROUP BY tm.ticker
-    ORDER BY weighted_score DESC
-  `).all(...params) as LeaderboardRow[];
+  const result = await db.execute({
+    sql: `
+      SELECT
+        tm.ticker,
+        tm.company,
+        COUNT(DISTINCT v.channel_id)  AS channel_count,
+        COUNT(*)                       AS mention_count,
+        CAST(ROUND(SUM(tm.conviction * c.weight) / SUM(c.weight)) AS INTEGER) AS weighted_score,
+        GROUP_CONCAT(DISTINCT c.name)  AS channels,
+        SUM(CASE WHEN c.name = 'Robert Reynolds' THEN 1 ELSE 0 END) AS rr_mentions
+      FROM ticker_mentions tm
+      JOIN videos v   ON tm.video_id  = v.id
+      JOIN channels c ON v.channel_id = c.channel_id
+      WHERE (rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-${days} days') OR v.pinned = 1)
+      ${channelFilter}
+      GROUP BY tm.ticker
+      ORDER BY weighted_score DESC
+    `,
+    args: params,
+  });
+  return result.rows as unknown as LeaderboardRow[];
 }
 
 export interface MentionDetail {
@@ -162,33 +211,41 @@ export interface MentionDetail {
   fetched_at: string;
 }
 
-export function getMentionDetails(db: DatabaseType, channelName?: string, days: number = 7): MentionDetail[] {
+export async function getMentionDetails(db: Client, channelName?: string, days: number = 7): Promise<MentionDetail[]> {
   const channelFilter = channelName ? 'AND c.name = ?' : '';
   const params = channelName ? [channelName] : [];
-  return db.prepare(`
-    SELECT
-      tm.ticker,
-      tm.sentiment,
-      tm.conviction,
-      tm.quote,
-      c.name      AS channel_name,
-      v.title     AS video_title,
-      v.video_id,
-      v.fetched_at
-    FROM ticker_mentions tm
-    JOIN videos v   ON tm.video_id  = v.id
-    JOIN channels c ON v.channel_id = c.channel_id
-    WHERE (rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-${days} days') OR v.pinned = 1)
-    ${channelFilter}
-    ORDER BY tm.ticker, c.weight DESC
-  `).all(...params) as MentionDetail[];
+  const result = await db.execute({
+    sql: `
+      SELECT
+        tm.ticker,
+        tm.sentiment,
+        tm.conviction,
+        tm.quote,
+        c.name      AS channel_name,
+        v.title     AS video_title,
+        v.video_id,
+        v.fetched_at
+      FROM ticker_mentions tm
+      JOIN videos v   ON tm.video_id  = v.id
+      JOIN channels c ON v.channel_id = c.channel_id
+      WHERE (rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-${days} days') OR v.pinned = 1)
+      ${channelFilter}
+      ORDER BY tm.ticker, c.weight DESC
+    `,
+    args: params,
+  });
+  return result.rows as unknown as MentionDetail[];
 }
 
-export function toggleVideoPin(db: DatabaseType, videoId: string): boolean {
-  const row = db.prepare('SELECT id, pinned FROM videos WHERE video_id = ?').get(videoId) as { id: number; pinned: number } | undefined;
-  if (!row) throw new Error(`Video not found: ${videoId}`);
+export async function toggleVideoPin(db: Client, videoId: string): Promise<boolean> {
+  const result = await db.execute({
+    sql: 'SELECT id, pinned FROM videos WHERE video_id = ?',
+    args: [videoId],
+  });
+  if (result.rows.length === 0) throw new Error(`Video not found: ${videoId}`);
+  const row = result.rows[0] as unknown as { id: number; pinned: number };
   const newPinned = row.pinned ? 0 : 1;
-  db.prepare('UPDATE videos SET pinned = ? WHERE id = ?').run(newPinned, row.id);
+  await db.execute({ sql: 'UPDATE videos SET pinned = ? WHERE id = ?', args: [newPinned, row.id] });
   return newPinned === 1;
 }
 
@@ -201,62 +258,70 @@ export interface ConvergenceAlert {
   alerted_at: string;
 }
 
-export function saveConvergenceAlert(
-  db: DatabaseType,
+export async function saveConvergenceAlert(
+  db: Client,
   ticker: string,
   channels: string,
   quotes: string
-): boolean {
-  const result = db.prepare(`
-    INSERT OR IGNORE INTO convergence_alerts (ticker, channels, quotes)
-    VALUES (?, ?, ?)
-  `).run(ticker, channels, quotes);
-  return result.changes > 0;
+): Promise<boolean> {
+  const result = await db.execute({
+    sql: `
+      INSERT OR IGNORE INTO convergence_alerts (ticker, channels, quotes)
+      VALUES (?, ?, ?)
+    `,
+    args: [ticker, channels, quotes],
+  });
+  return result.rowsAffected > 0;
 }
 
-export function getAlerts(db: DatabaseType): { alerts: ConvergenceAlert[]; unreadCount: number } {
-  const alerts = db.prepare('SELECT * FROM convergence_alerts ORDER BY alerted_at DESC').all() as ConvergenceAlert[];
+export async function getAlerts(db: Client): Promise<{ alerts: ConvergenceAlert[]; unreadCount: number }> {
+  const result = await db.execute('SELECT * FROM convergence_alerts ORDER BY alerted_at DESC');
+  const alerts = result.rows as unknown as ConvergenceAlert[];
   const unreadCount = alerts.filter(a => a.read === 0).length;
   return { alerts, unreadCount };
 }
 
-export function markAlertRead(db: DatabaseType, id: number): void {
-  db.prepare('UPDATE convergence_alerts SET read = 1 WHERE id = ?').run(id);
+export async function markAlertRead(db: Client, id: number): Promise<void> {
+  await db.execute({ sql: 'UPDATE convergence_alerts SET read = 1 WHERE id = ?', args: [id] });
 }
 
-export function updateVideoTranscript(
-  db: DatabaseType,
+export async function updateVideoTranscript(
+  db: Client,
   videoRowId: number,
   transcript: string,
   summary: string
-): void {
-  const result = db.prepare('UPDATE videos SET transcript = ?, summary = ? WHERE id = ?')
-    .run(transcript, summary, videoRowId);
-  if (result.changes === 0) throw new Error(`No video row found for id ${videoRowId}`);
+): Promise<void> {
+  const result = await db.execute({
+    sql: 'UPDATE videos SET transcript = ?, summary = ? WHERE id = ?',
+    args: [transcript, summary, videoRowId],
+  });
+  if (result.rowsAffected === 0) throw new Error(`No video row found for id ${videoRowId}`);
 }
 
-export function saveMemory(
-  db: DatabaseType,
+export async function saveMemory(
+  db: Client,
   content: string,
   source: 'explicit' | 'extracted'
-): void {
-  db.prepare('INSERT INTO memories (content, source) VALUES (?, ?)').run(content, source);
+): Promise<void> {
+  await db.execute({ sql: 'INSERT INTO memories (content, source) VALUES (?, ?)', args: [content, source] });
 }
 
-export function getMemories(db: DatabaseType): string[] {
-  const rows = db.prepare('SELECT content FROM memories ORDER BY created_at DESC').all() as { content: string }[];
-  return rows.map(r => r.content);
+export async function getMemories(db: Client): Promise<string[]> {
+  const result = await db.execute('SELECT content FROM memories ORDER BY created_at DESC');
+  return result.rows.map(r => r.content as string);
 }
 
-export function saveConversation(db: DatabaseType, question: string, answer: string): void {
-  db.prepare('INSERT INTO conversations (question, answer) VALUES (?, ?)').run(question, answer);
+export async function saveConversation(db: Client, question: string, answer: string): Promise<void> {
+  await db.execute({ sql: 'INSERT INTO conversations (question, answer) VALUES (?, ?)', args: [question, answer] });
 }
 
-export function getRecentConversations(
-  db: DatabaseType,
+export async function getRecentConversations(
+  db: Client,
   n: number = 5
-): { question: string; answer: string }[] {
-  return db.prepare(
-    'SELECT question, answer FROM conversations ORDER BY id DESC LIMIT ?'
-  ).all(n) as { question: string; answer: string }[];
+): Promise<{ question: string; answer: string }[]> {
+  const result = await db.execute({
+    sql: 'SELECT question, answer FROM conversations ORDER BY id DESC LIMIT ?',
+    args: [n],
+  });
+  return result.rows as unknown as { question: string; answer: string }[];
 }

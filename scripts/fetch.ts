@@ -5,12 +5,12 @@ import { fetchSubstackPosts, extractSubstackContent, SubstackPost } from '@/lib/
 import { extractTickers, generateSummary } from '@/lib/extract';
 
 async function main() {
-  const db = getDb();
+  const db = await getDb();
   let videosProcessed = 0;
   let tickersFound = 0;
 
   for (const channel of CHANNELS) {
-    saveChannel(db, channel);
+    await saveChannel(db, channel);
 
     let videos: Array<SubstackPost | Awaited<ReturnType<typeof fetchRecentVideos>>[number]>;
     try {
@@ -30,18 +30,21 @@ async function main() {
     }
 
     for (const video of videos) {
-      const videoRowId = saveVideo(db, {
+      const videoRowId = await saveVideo(db, {
         videoId: video.videoId,
         channelId: channel.channelId,
         title: video.title,
         publishedAt: video.publishedAt,
       });
 
-      const existing = db.prepare(`
+      const existing = (await db.execute({
+        sql: `
         SELECT v.transcript,
                (SELECT COUNT(*) FROM ticker_mentions WHERE video_id = v.id) AS mention_count
         FROM videos v WHERE v.id = ?
-      `).get(videoRowId) as { transcript: string | null; mention_count: number };
+      `,
+        args: [videoRowId],
+      })).rows[0] as unknown as { transcript: string | null; mention_count: number };
 
       if (existing.transcript && existing.mention_count > 0) {
         console.log(`Skipped (already processed): ${video.title}`);
@@ -79,7 +82,7 @@ async function main() {
         try { summary = await generateSummary(transcript); } catch (err) {
           console.error(`${channel.name} / ${video.title}: summary failed —`, err);
         }
-        updateVideoTranscript(db, videoRowId, transcript, summary);
+        await updateVideoTranscript(db, videoRowId, transcript, summary);
       }
 
       let mentions;
@@ -91,7 +94,7 @@ async function main() {
       }
 
       for (const mention of mentions) {
-        saveMention(db, {
+        await saveMention(db, {
           videoRowId,
           ticker: mention.ticker.toUpperCase(),
           company: mention.company ?? null,

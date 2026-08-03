@@ -10,7 +10,7 @@ export async function PATCH(
   if (isNaN(numId)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
-  const db = getDb();
-  markAlertRead(db, numId);
+  const db = await getDb();
+  await markAlertRead(db, numId);
   return NextResponse.json({ ok: true });
 }

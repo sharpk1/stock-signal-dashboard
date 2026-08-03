@@ -40,12 +40,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Could not parse a YouTube video ID from that URL' }, { status: 400 });
   }
 
-  const db = getDb();
+  const db = await getDb();
 
-  const existing = db.prepare('SELECT id FROM videos WHERE video_id = ?').get(videoId) as { id: number } | undefined;
+  const existing = (await db.execute({
+    sql: 'SELECT id FROM videos WHERE video_id = ?',
+    args: [videoId],
+  })).rows[0] as unknown as { id: number } | undefined;
   if (existing) {
     // Already in DB — just pin it
-    db.prepare('UPDATE videos SET pinned = 1 WHERE id = ?').run(existing.id);
+    await db.execute({ sql: 'UPDATE videos SET pinned = 1 WHERE id = ?', args: [existing.id] });
     return NextResponse.json({ ok: true, alreadyExisted: true });
   }
 
@@ -66,17 +69,23 @@ export async function POST(request: Request) {
     extractTickers(transcript, title).catch(() => []),
   ]);
 
-  const videoRowId = db.prepare(`
+  const videoRowId = Number((await db.execute({
+    sql: `
     INSERT INTO videos (video_id, channel_id, title, published_at, pinned)
     VALUES (?, ?, ?, datetime('now'), 1)
-  `).run(videoId, channelId, title).lastInsertRowid as number;
+  `,
+    args: [videoId, channelId, title],
+  })).lastInsertRowid);
 
   if (transcript) {
-    db.prepare('UPDATE videos SET transcript = ?, summary = ? WHERE id = ?').run(transcript, summary, videoRowId);
+    await db.execute({
+      sql: 'UPDATE videos SET transcript = ?, summary = ? WHERE id = ?',
+      args: [transcript, summary, videoRowId],
+    });
   }
 
   for (const mention of mentions) {
-    saveMention(db, {
+    await saveMention(db, {
       videoRowId,
       ticker: mention.ticker.toUpperCase(),
       company: mention.company ?? null,

@@ -1,4 +1,4 @@
-import { Database as DatabaseType } from 'better-sqlite3';
+import type { Client } from '@libsql/client';
 import { saveMemory } from '@/lib/db';
 
 function getString(input: Record<string, unknown>, key: string): { value: string } | { error: string } {
@@ -7,11 +7,11 @@ function getString(input: Record<string, unknown>, key: string): { value: string
   return { value: val };
 }
 
-export function executeToolCall(
+export async function executeToolCall(
   name: string,
   input: Record<string, unknown>,
-  db: DatabaseType
-): string {
+  db: Client
+): Promise<string> {
   if (name === 'search_summaries') {
     const queryResult = getString(input, 'query');
     if ('error' in queryResult) return queryResult.error;
@@ -20,9 +20,10 @@ export function executeToolCall(
     const daysNum = Math.max(1, Math.floor(Number(input['days'] ?? 30)));
     const safedays = Number.isFinite(daysNum) ? daysNum : 30;
     const channelFilter = channel ? 'AND c.name = ?' : '';
-    const params: unknown[] = [`%${query}%`, `%${query}%`, query, `%${query}%`, safedays];
+    const params: (string | number)[] = [`%${query}%`, `%${query}%`, query, `%${query}%`, safedays];
     if (channel) params.push(channel);
-    const rows = db.prepare(`
+    const rows = (await db.execute({
+      sql: `
       SELECT DISTINCT v.title, v.summary, v.video_id, v.published_at, c.name AS channel_name
       FROM videos v
       JOIN channels c ON v.channel_id = c.channel_id
@@ -37,7 +38,9 @@ export function executeToolCall(
         ${channelFilter}
       ORDER BY v.published_at DESC
       LIMIT 10
-    `).all(...params) as {
+    `,
+      args: params,
+    })).rows as unknown as {
       title: string; summary: string | null; video_id: string;
       published_at: string; channel_name: string;
     }[];
@@ -52,12 +55,15 @@ export function executeToolCall(
     const videoIdResult = getString(input, 'video_id');
     if ('error' in videoIdResult) return videoIdResult.error;
     const { value: video_id } = videoIdResult;
-    const row = db.prepare(`
+    const row = (await db.execute({
+      sql: `
       SELECT v.transcript, v.title, c.name AS channel_name, v.published_at
       FROM videos v
       JOIN channels c ON v.channel_id = c.channel_id
       WHERE v.video_id = ?
-    `).get(video_id) as {
+    `,
+      args: [video_id],
+    })).rows[0] as unknown as {
       transcript: string | null; title: string; channel_name: string; published_at: string;
     } | undefined;
 
@@ -70,7 +76,7 @@ export function executeToolCall(
     const contentResult = getString(input, 'content');
     if ('error' in contentResult) return contentResult.error;
     const { value: content } = contentResult;
-    saveMemory(db, content, 'explicit');
+    await saveMemory(db, content, 'explicit');
     return 'Memory saved.';
   }
 

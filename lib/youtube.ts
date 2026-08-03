@@ -1,6 +1,25 @@
 import { XMLParser } from 'fast-xml-parser';
 import { YoutubeTranscript } from 'youtube-transcript';
+import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { Channel } from '@/lib/channels';
+
+// YouTube blocks data-center IPs, so transcript requests are routed through
+// Webshare rotating residential proxies. We inject a proxied fetch into the
+// youtube-transcript library via its `config.fetch` option. Falls back to a
+// direct fetch when creds aren't configured (e.g. local dev).
+let proxiedFetch: typeof fetch | undefined;
+function getProxiedFetch(): typeof fetch | undefined {
+  if (proxiedFetch) return proxiedFetch;
+  const username = process.env.WEBSHARE_PROXY_USERNAME;
+  const password = process.env.WEBSHARE_PROXY_PASSWORD;
+  const host = process.env.WEBSHARE_PROXY_HOST ?? 'p.webshare.io';
+  const port = process.env.WEBSHARE_PROXY_PORT ?? '80';
+  if (!username || !password) return undefined;
+  const dispatcher = new ProxyAgent(`http://${username}:${password}@${host}:${port}`);
+  proxiedFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+    undiciFetch(input as string, { ...init, dispatcher } as Parameters<typeof undiciFetch>[1])) as unknown as typeof fetch;
+  return proxiedFetch;
+}
 
 export interface RssVideo {
   videoId: string;
@@ -35,6 +54,10 @@ export async function fetchRecentVideos(channel: Channel): Promise<RssVideo[]> {
 }
 
 export async function fetchTranscript(videoId: string): Promise<string> {
-  const items = await YoutubeTranscript.fetchTranscript(videoId);
+  const fetchFn = getProxiedFetch();
+  const items = await YoutubeTranscript.fetchTranscript(
+    videoId,
+    fetchFn ? { fetch: fetchFn } : undefined,
+  );
   return items.map(item => item.text).join(' ');
 }

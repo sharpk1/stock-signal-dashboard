@@ -15,13 +15,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
   }
-  const db = getDb();
+  const db = await getDb();
   const errors: string[] = [];
   let videosProcessed = 0;
   let tickersFound = 0;
 
   for (const channel of CHANNELS) {
-    saveChannel(db, channel);
+    await saveChannel(db, channel);
 
     let videos: Array<SubstackPost | Awaited<ReturnType<typeof fetchRecentVideos>>[number]>;
     try {
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     }
 
     for (const video of videos) {
-      const videoRowId = saveVideo(db, {
+      const videoRowId = await saveVideo(db, {
         videoId: video.videoId,
         channelId: channel.channelId,
         title: video.title,
@@ -51,11 +51,14 @@ export async function POST(request: Request) {
       });
 
       // Check processing state
-      const existing = db.prepare(`
+      const existing = (await db.execute({
+        sql: `
         SELECT v.transcript,
                (SELECT COUNT(*) FROM ticker_mentions WHERE video_id = v.id) AS mention_count
         FROM videos v WHERE v.id = ?
-      `).get(videoRowId) as { transcript: string | null; mention_count: number };
+      `,
+        args: [videoRowId],
+      })).rows[0] as unknown as { transcript: string | null; mention_count: number };
 
       if (existing.transcript && existing.mention_count > 0) {
         // fully processed — skip
@@ -112,7 +115,7 @@ export async function POST(request: Request) {
           console.error(`${channel.name} / ${video.title}: summary generation failed — ${err instanceof Error ? err.message : err}`);
         }
 
-        updateVideoTranscript(db, videoRowId, transcript, summary);
+        await updateVideoTranscript(db, videoRowId, transcript, summary);
       }
 
       let mentions;
@@ -126,7 +129,7 @@ export async function POST(request: Request) {
       }
 
       for (const mention of mentions) {
-        saveMention(db, {
+        await saveMention(db, {
           videoRowId,
           ticker: mention.ticker.toUpperCase(),
           company: mention.company ?? null,
@@ -144,11 +147,12 @@ export async function POST(request: Request) {
 
   // Detect new convergences and save alerts
   const newAlerts: string[] = [];
-  const leaderboard = getLeaderboard(db, undefined, 30);
+  const leaderboard = await getLeaderboard(db, undefined, 30);
   for (const row of leaderboard) {
     if (row.rr_mentions > 0 && row.channel_count >= 2) {
       const channels = row.channels;
-      const quotes = db.prepare(`
+      const quotes = (await db.execute({
+        sql: `
         SELECT tm.quote, c.name AS channel_name
         FROM ticker_mentions tm
         JOIN videos v ON tm.video_id = v.id
@@ -156,9 +160,11 @@ export async function POST(request: Request) {
         WHERE tm.ticker = ? AND tm.quote IS NOT NULL
         ORDER BY c.weight DESC
         LIMIT 4
-      `).all(row.ticker) as { quote: string; channel_name: string }[];
+      `,
+        args: [row.ticker],
+      })).rows as unknown as { quote: string; channel_name: string }[];
       const quotesJson = JSON.stringify(quotes);
-      const isNew = saveConvergenceAlert(db, row.ticker, channels, quotesJson);
+      const isNew = await saveConvergenceAlert(db, row.ticker, channels, quotesJson);
       if (isNew) newAlerts.push(row.ticker);
     }
   }
