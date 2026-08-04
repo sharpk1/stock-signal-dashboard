@@ -241,7 +241,23 @@ export default function ChannelPage() {
                       {video.summary ? (
                         <div className="mb-4">
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Summary</p>
-                          <p className="text-sm text-gray-700 leading-relaxed">{video.summary}</p>
+                          <div className="text-sm text-gray-700 leading-relaxed">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                h1: ({ children }) => <p className="font-bold text-gray-900 mt-3 mb-1 text-[15px] first:mt-0">{children}</p>,
+                                h2: ({ children }) => <p className="font-bold text-gray-900 mt-3 mb-1 first:mt-0">{children}</p>,
+                                h3: ({ children }) => <p className="font-semibold text-gray-900 mt-2 mb-1 first:mt-0">{children}</p>,
+                                strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+                                ul: ({ children }) => <ul className="list-disc list-inside space-y-0.5 my-1">{children}</ul>,
+                                ol: ({ children }) => <ol className="list-decimal list-inside space-y-0.5 my-1">{children}</ol>,
+                                li: ({ children }) => <li className="ml-1">{children}</li>,
+                                p: ({ children }) => <p className="mb-1.5 last:mb-0">{children}</p>,
+                              }}
+                            >
+                              {video.summary}
+                            </ReactMarkdown>
+                          </div>
                         </div>
                       ) : (
                         <p className="text-sm text-gray-400 italic mb-4">No summary available</p>
