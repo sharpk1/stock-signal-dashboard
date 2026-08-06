@@ -9,6 +9,7 @@ import type { LeaderboardEntry } from '@/app/api/leaderboard/route';
 import { CHANNELS } from '@/lib/channels';
 import type { ChannelWinRate } from '@/app/api/winrate/route';
 import type { VideoUrl } from '@/app/api/videos/route';
+import type { DigestVideo } from '@/app/api/digest/route';
 import type { ConvergenceAlert } from '@/lib/db';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
 
@@ -94,7 +95,11 @@ export default function Page() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'signals' | 'track-record' | 'notifications'>('signals');
+  const [activeTab, setActiveTab] = useState<'recent' | 'signals' | 'track-record' | 'notifications'>('recent');
+  const [digest, setDigest] = useState<DigestVideo[]>([]);
+  const [digestLoading, setDigestLoading] = useState(false);
+  const [digestDays, setDigestDays] = useState<3 | 7 | 14>(7);
+  const [digestExpanded, setDigestExpanded] = useState<string | null>(null);
   const [leaderboardDays, setLeaderboardDays] = useState<7 | 14 | 30>(7);
   const [alerts, setAlerts] = useState<ConvergenceAlert[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -139,6 +144,20 @@ export default function Page() {
 
   useEffect(() => { loadLeaderboard(leaderboardDays); }, [loadLeaderboard, leaderboardDays]);
   useEffect(() => { loadAlerts(); }, [loadAlerts]);
+
+  const loadDigest = useCallback(async (days: number) => {
+    setDigestLoading(true);
+    try {
+      const res = await fetch(`/api/digest?days=${days}`);
+      setDigest(await res.json());
+    } finally {
+      setDigestLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'recent') loadDigest(digestDays);
+  }, [activeTab, digestDays, loadDigest]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -189,7 +208,7 @@ export default function Page() {
       const data = await res.json();
       setFetchResult(data);
       setLastFetched(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
-      await Promise.all([loadLeaderboard(leaderboardDays), loadAlerts()]);
+      await Promise.all([loadLeaderboard(leaderboardDays), loadAlerts(), loadDigest(digestDays)]);
     } finally {
       setFetching(false);
     }
@@ -305,6 +324,14 @@ export default function Page() {
         {/* Tab switcher */}
         <div className="flex mb-6 border-b border-gray-200">
           <button
+            onClick={() => setActiveTab('recent')}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === 'recent' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Recent
+          </button>
+          <button
             onClick={() => setActiveTab('signals')}
             className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
               activeTab === 'signals' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -334,6 +361,97 @@ export default function Page() {
             )}
           </button>
         </div>
+
+        {activeTab === 'recent' && (
+          <div>
+            <div className="flex items-center gap-1 mb-4">
+              <span className="text-xs text-gray-500 mr-1">Last:</span>
+              {([3, 7, 14] as const).map(d => (
+                <button
+                  key={d}
+                  onClick={() => setDigestDays(d)}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                    digestDays === d ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
+                  }`}
+                >
+                  {d}d
+                </button>
+              ))}
+              {!digestLoading && <span className="text-xs text-gray-400 ml-2">{digest.length} video{digest.length === 1 ? '' : 's'}</span>}
+            </div>
+
+            {digestLoading ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-3">
+                <svg className="animate-spin h-6 w-6 text-blue-500" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                <span className="text-gray-400 text-sm">Loading recent activity…</span>
+              </div>
+            ) : digest.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-white border border-gray-200 shadow-sm flex items-center justify-center text-2xl">🗞️</div>
+                <div>
+                  <p className="text-gray-800 font-medium">Nothing new in this window</p>
+                  <p className="text-gray-500 text-sm mt-1">Try a longer range, or hit Fetch Latest</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {digest.map(v => {
+                  const isOpen = digestExpanded === v.video_id;
+                  return (
+                    <div key={v.video_id} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                      <div className="px-5 py-4 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setDigestExpanded(isOpen ? null : v.video_id)}>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-semibold text-blue-600">{v.channel_name}</span>
+                          <span className="text-xs text-gray-400">{v.published_at.slice(0, 10)}</span>
+                        </div>
+                        <div className="flex items-start gap-2 mt-1">
+                          <span className="text-gray-400 text-xs mt-0.5">{isOpen ? '▼' : '▶'}</span>
+                          <span className="font-medium text-gray-900 text-sm flex-1">{v.title}</span>
+                          <a href={v.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-gray-400 hover:text-blue-600 text-sm shrink-0">↗</a>
+                        </div>
+                        {v.mentions.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2 pl-5">
+                            {v.mentions.slice(0, 8).map((m, i) => (
+                              <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono font-bold text-blue-700 bg-blue-50 border border-blue-100">{m.ticker}</span>
+                            ))}
+                            {v.mentions.length > 8 && <span className="text-[11px] text-gray-400 self-center">+{v.mentions.length - 8}</span>}
+                          </div>
+                        )}
+                      </div>
+                      {isOpen && (
+                        <div className="bg-slate-50 border-t border-slate-100 px-5 py-4">
+                          {v.summary ? (
+                            <div className="text-sm text-gray-700 leading-relaxed">
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  h1: ({ children }) => <p className="font-bold text-gray-900 mt-3 mb-1 first:mt-0">{children}</p>,
+                                  h2: ({ children }) => <p className="font-bold text-gray-900 mt-3 mb-1 first:mt-0">{children}</p>,
+                                  h3: ({ children }) => <p className="font-semibold text-gray-900 mt-2 mb-1 first:mt-0">{children}</p>,
+                                  strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+                                  ul: ({ children }) => <ul className="list-disc list-inside space-y-0.5 my-1">{children}</ul>,
+                                  ol: ({ children }) => <ol className="list-decimal list-inside space-y-0.5 my-1">{children}</ol>,
+                                  p: ({ children }) => <p className="mb-1.5 last:mb-0">{children}</p>,
+                                }}
+                              >
+                                {v.summary}
+                              </ReactMarkdown>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-400 italic">No summary available</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {activeTab === 'signals' && (<>
         {/* Channel project links */}
