@@ -1,6 +1,6 @@
 # Stock Signal Dashboard
 
-Aggregates YouTube stock ticker mentions from 7 channels. Hit "Fetch Latest" to pull transcripts from the last 24 hours, Claude Haiku extracts tickers with sentiment and conviction, and the leaderboard ranks by weighted consensus score.
+Aggregates YouTube stock ticker mentions from 8 channels. Hit "Fetch Latest" to pull transcripts from the last 24 hours, Claude Haiku extracts tickers with sentiment and conviction, and the leaderboard ranks by weighted consensus score.
 
 ## Setup
 

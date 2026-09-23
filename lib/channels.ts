@@ -60,4 +60,11 @@ export const CHANNELS: Channel[] = [
     source: 'substack',
     substackHandle: 'thepopularinvestor',
   },
+  {
+    id: 9,
+    channelId: "UCUvvj5lwue7PspotMDjk5UA",
+    handle: "@MeetKevin",
+    name: "Meet Kevin",
+    weight: 0.1,
+  },
 ];
