@@ -1,17 +1,20 @@
 import { NextResponse } from 'next/server';
-import { getDb, getHoldingIndex, getLeaderboard, getMentionDetails, type LeaderboardRow, type MentionDetail } from '@/lib/db';
+import { getDb, getLeaderboard, getMentionDetails, type LeaderboardRow, type MentionDetail } from '@/lib/db';
+import { getHoldingIndex } from '@/lib/etoro';
 import { CHANNELS } from '@/lib/channels';
 
 /** A mention, plus whether the person making it actually owns the thing. */
 export interface MentionWithHolding extends MentionDetail {
-  /** Percent of that analyst's portfolio, when it is on record. */
+  /** eToro "Invested" percent of that analyst's portfolio, when on record. */
   holding_pct: number | null;
+  /** eToro "Value" percent — the same position at today's prices. */
+  holding_value_pct: number | null;
   holding_as_of: string | null;
 }
 
 export interface LeaderboardEntry extends LeaderboardRow {
   details: MentionWithHolding[];
-  /** The largest position any mentioning analyst holds. Sorts the list. */
+  /** The largest position any mentioning analyst holds. */
   max_holding_pct: number | null;
   normalized_score: number;
   is_convergent: boolean;
@@ -29,7 +32,7 @@ export async function GET(request: Request) {
   // ALT-61. What someone says and what they own are different signals, and
   // the second is harder to fake. Mentions carry the position size alongside
   // the spoken conviction rather than replacing it.
-  const holdings = await getHoldingIndex(db);
+  const holdings = getHoldingIndex();
   const channelIdByName = new Map(CHANNELS.map((c) => [c.name, c.channelId]));
 
   const detailsByTicker: Record<string, MentionWithHolding[]> = {};
@@ -39,7 +42,8 @@ export async function GET(request: Request) {
     if (!detailsByTicker[d.ticker]) detailsByTicker[d.ticker] = [];
     detailsByTicker[d.ticker].push({
       ...d,
-      holding_pct: held?.weight_pct ?? null,
+      holding_pct: held?.invested_pct ?? null,
+      holding_value_pct: held?.value_pct ?? null,
       holding_as_of: held?.as_of ?? null,
     });
   }

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { LeaderboardEntry } from '@/app/api/leaderboard/route';
+import { ETORO_SNAPSHOTS } from '@/lib/etoro';
 import { CHANNELS } from '@/lib/channels';
 import type { ChannelWinRate } from '@/app/api/winrate/route';
 import type { VideoUrl } from '@/app/api/videos/route';
@@ -73,15 +74,26 @@ function ConvictionBadge({ conviction }: { conviction: number }) {
  * Absent means not on record, never zero. An analyst with no imported
  * portfolio gets no badge rather than a badge claiming they hold nothing.
  */
-function HoldingBadge({ pct, asOf }: { pct: number; asOf: string | null }) {
+function HoldingBadge({ pct, valuePct, asOf }: { pct: number; valuePct: number | null; asOf: string | null }) {
+  const title = [
+    `eToro: ${pct.toFixed(2)}% of portfolio invested`,
+    valuePct !== null ? `${valuePct.toFixed(2)}% at today's value` : null,
+    asOf ? `updated ${formatAsOf(asOf)}` : null,
+  ].filter(Boolean).join(' · ');
   return (
     <span
-      title={asOf ? `eToro portfolio as of ${asOf}` : 'eToro portfolio'}
+      title={title}
       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap bg-violet-50 text-violet-800 border border-violet-300"
     >
       eToro <span className="opacity-70 tabular-nums">{pct.toFixed(pct < 10 ? 1 : 0)}%</span>
     </span>
   );
+}
+
+/** "2026-09-29" → "Sep 29, 2026", without the UTC-midnight off-by-one. */
+function formatAsOf(asOf: string): string {
+  const [y, m, d] = asOf.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function OutcomeBadge({ outcome }: { outcome: 'win' | 'loss' | 'skip' }) {
@@ -507,6 +519,15 @@ export default function Page() {
               {d}d
             </button>
           ))}
+          {ETORO_SNAPSHOTS.map(snap => (
+            <span
+              key={snap.channelId}
+              title={`${snap.positions.length} positions, copied from etoro.com/people/${snap.etoroUser.toLowerCase()}/portfolio`}
+              className="ml-auto text-xs text-violet-800"
+            >
+              {snap.analyst}&apos;s eToro portfolio · last updated {formatAsOf(snap.asOf)}
+            </span>
+          ))}
         </div>
 
         {/* Main content */}
@@ -605,7 +626,7 @@ export default function Page() {
                               <div className="flex items-center gap-1.5">
                                 <ConvictionBadge conviction={d.conviction} />
                                 {d.holding_pct !== null && (
-                                  <HoldingBadge pct={d.holding_pct} asOf={d.holding_as_of} />
+                                  <HoldingBadge pct={d.holding_pct} valuePct={d.holding_value_pct} asOf={d.holding_as_of} />
                                 )}
                               </div>
                             </div>

@@ -89,16 +89,6 @@ export async function initDb(db: Client): Promise<void> {
       UNIQUE(ticker, channels)
     );
 
-    CREATE TABLE IF NOT EXISTS portfolio_holdings (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      channel_id TEXT NOT NULL,
-      ticker     TEXT NOT NULL,
-      weight_pct REAL NOT NULL,
-      as_of      TEXT NOT NULL,
-      source     TEXT NOT NULL DEFAULT 'etoro',
-      UNIQUE(channel_id, ticker, source)
-    );
-
     CREATE TABLE IF NOT EXISTS memories (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       content    TEXT NOT NULL,
@@ -357,68 +347,4 @@ export async function getRecentConversations(
     args: [n],
   });
   return result.rows as unknown as { question: string; answer: string }[];
-}
-
-
-/**
- * What an analyst actually holds, and how much of it.
- *
- * Ray's point on the 2026-06-26 call: what someone says and what they own are
- * different signals, and the second one is harder to fake. "We need to use the
- * weightings behind where they're putting their money... he only has a small
- * position, he's telling me what he believes the most."
- *
- * Position size is therefore conviction evidence that sits alongside the
- * conviction we infer from what they said on camera, not a replacement for it.
- */
-export interface Holding {
-  channel_id: string;
-  ticker: string;
-  weight_pct: number;
-  as_of: string;
-  source: string;
-}
-
-/**
- * Replaces one analyst's holdings wholesale.
- *
- * A portfolio is a snapshot, not a log: a position that has been sold must
- * disappear rather than linger at its last known weight, or the badge starts
- * asserting something that stopped being true. Deleting and re-inserting in
- * one batch is the honest shape for that, and these sets are a few dozen rows.
- */
-export async function savePortfolioHoldings(
-  db: Client,
-  channelId: string,
-  holdings: { ticker: string; weightPct: number }[],
-  asOf: string,
-  source = 'etoro',
-): Promise<void> {
-  const statements = [
-    {
-      sql: 'DELETE FROM portfolio_holdings WHERE channel_id = ? AND source = ?',
-      args: [channelId, source] as (string | number)[],
-    },
-    ...holdings.map((h) => ({
-      sql: `INSERT INTO portfolio_holdings (channel_id, ticker, weight_pct, as_of, source)
-            VALUES (?, ?, ?, ?, ?)`,
-      args: [channelId, h.ticker.toUpperCase(), h.weightPct, asOf, source] as (string | number)[],
-    })),
-  ];
-  await db.batch(statements, 'write');
-}
-
-/** Every holding on record, for badging mentions. */
-export async function getHoldings(db: Client): Promise<Holding[]> {
-  const result = await db.execute('SELECT channel_id, ticker, weight_pct, as_of, source FROM portfolio_holdings');
-  return result.rows as unknown as Holding[];
-}
-
-/**
- * Holdings keyed by `channel_id|TICKER`, which is how the leaderboard needs to
- * ask the question: does the person who just said this actually own it?
- */
-export async function getHoldingIndex(db: Client): Promise<Map<string, Holding>> {
-  const rows = await getHoldings(db);
-  return new Map(rows.map((h) => [`${h.channel_id}|${h.ticker.toUpperCase()}`, h]));
 }
