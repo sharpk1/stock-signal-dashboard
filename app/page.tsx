@@ -60,6 +60,30 @@ function ConvictionBadge({ conviction }: { conviction: number }) {
   );
 }
 
+/**
+ * What the analyst actually owns, when it is on record.
+ *
+ * ALT-61, from Ray's 2026-06-26 call: "we need to use the weightings behind
+ * where they're putting their money... he only has a small position, he's
+ * telling me what he believes the most." Spoken conviction and position size
+ * are different signals, so this sits beside ConvictionBadge rather than
+ * folding into it — a 90% bullish call on a 0.5% position is a real and
+ * visible disagreement, and flattening the two into one score would hide it.
+ *
+ * Absent means not on record, never zero. An analyst with no imported
+ * portfolio gets no badge rather than a badge claiming they hold nothing.
+ */
+function HoldingBadge({ pct, asOf }: { pct: number; asOf: string | null }) {
+  return (
+    <span
+      title={asOf ? `eToro portfolio as of ${asOf}` : 'eToro portfolio'}
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap bg-violet-50 text-violet-800 border border-violet-300"
+    >
+      eToro <span className="opacity-70 tabular-nums">{pct.toFixed(pct < 10 ? 1 : 0)}%</span>
+    </span>
+  );
+}
+
 function OutcomeBadge({ outcome }: { outcome: 'win' | 'loss' | 'skip' }) {
   const styles = {
     win: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
@@ -578,7 +602,12 @@ export default function Page() {
                                 )}
                               </div>
                               <SentimentBadge sentiment={d.sentiment} />
-                              <ConvictionBadge conviction={d.conviction} />
+                              <div className="flex items-center gap-1.5">
+                                <ConvictionBadge conviction={d.conviction} />
+                                {d.holding_pct !== null && (
+                                  <HoldingBadge pct={d.holding_pct} asOf={d.holding_as_of} />
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
