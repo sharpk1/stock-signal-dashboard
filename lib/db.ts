@@ -1,6 +1,7 @@
 import type { Client } from '@libsql/client';
 import path from 'path';
 import { Channel } from '@/lib/channels';
+import { initDeliverables } from '@/lib/deliverables';
 
 export type Db = Client;
 
@@ -103,6 +104,8 @@ export async function initDb(db: Client): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  await initDeliverables(db);
 }
 
 export async function saveChannel(db: Client, channel: Channel): Promise<void> {
