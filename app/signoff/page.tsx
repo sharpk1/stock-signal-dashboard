@@ -22,6 +22,45 @@ function StatusBadge({ status }: { status: DeliverableStatus }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${cls}`}>{label}</span>;
 }
 
+// A practice row so the sign-off flow can be tried before anything is delivered.
+// It lives only in the page's memory: nothing is saved and it never counts.
+function ExampleCard({ name }: { name: string }) {
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+  return (
+    <section className="bg-white border border-dashed border-blue-300 rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-dashed border-blue-200 bg-blue-50/50 flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold text-sm">Try it: example deliverable</span>
+        <span className="text-xs text-blue-700">Practice only. Not saved, not counted.</span>
+      </div>
+      <div className="px-5 py-4 flex items-start gap-4">
+        <input
+          type="checkbox"
+          id="so-example"
+          className="mt-1 h-5 w-5 accent-emerald-600"
+          checked={!!checkedAt}
+          onChange={() => setCheckedAt(checkedAt ? null : new Date())}
+          aria-label="Sign off the example deliverable"
+        />
+        <label htmlFor="so-example" className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs font-bold text-blue-600">EX</span>
+            <span className="font-medium">Remove placeholder Track Record tab</span>
+            <StatusBadge status="delivered" />
+          </div>
+          <div className="text-sm text-gray-500"><span className="text-gray-400">Done when:</span> The tab is gone.</div>
+          {checkedAt ? (
+            <div className="text-xs text-emerald-700">
+              Signed off by {name.trim() || 'you'} · {checkedAt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+            </div>
+          ) : (
+            <div className="text-xs text-gray-400">Delivered items look like this. Check the test, then tick the box.</div>
+          )}
+        </label>
+      </div>
+    </section>
+  );
+}
+
 function formatDate(sqlDate: string): string {
   return new Date(sqlDate.replace(' ', 'T') + 'Z').toLocaleString('en-US', {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -113,6 +152,8 @@ export default function SignOffPage() {
           </label>
         </div>
 
+        <ExampleCard name={name} />
+
         {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{error}</div>}
 
         {loading ? (
@@ -145,8 +186,10 @@ export default function SignOffPage() {
                         <StatusBadge status={item.status} />
                       </div>
                       <div className="text-sm text-gray-500"><span className="text-gray-400">Done when:</span> {item.doneWhen}</div>
-                      {item.signedOffAt && (
+                      {item.signedOffAt ? (
                         <div className="text-xs text-emerald-700">Signed off by {item.signedOffBy} · {formatDate(item.signedOffAt)}</div>
+                      ) : !canSign && (
+                        <div className="text-xs text-gray-400">Can be signed off once it&apos;s delivered.</div>
                       )}
                     </label>
                   </li>
