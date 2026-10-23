@@ -38,22 +38,24 @@ export function parseShow(text: string): { epic: string | null; doneWhen: string
 }
 
 async function main() {
-  const db = await getDb();
-
+  // Read every ticket before opening the database: each `ticket` call takes a
+  // second or two, and Turso drops a remote connection that sits idle that long.
   const rows = STATES.flatMap(state =>
     ticket('list', '--project', PROJECT, '--state', state, '--limit', '200')
       .split('\n').map(parseListLine).filter(r => r !== null));
 
-  let synced = 0;
-  for (const r of rows) {
+  const deliverables = rows.flatMap(r => {
     const { epic, doneWhen } = parseShow(ticket('show', r.id));
-    if (epic !== EPIC) continue;
-    const d = { code: r.code, phase: EPIC, title: r.title, doneWhen, ticketId: r.id, status: toStatus(r.state) };
-    console.log(`${d.code.padEnd(4)} ${r.id.padEnd(7)} ${d.status.padEnd(12)} ${d.title}`);
+    if (epic !== EPIC) return [];
+    return [{ code: r.code, phase: EPIC, title: r.title, doneWhen, ticketId: r.id, status: toStatus(r.state) }];
+  });
+
+  const db = await getDb();
+  for (const d of deliverables) {
+    console.log(`${d.code.padEnd(4)} ${d.ticketId.padEnd(7)} ${d.status.padEnd(12)} ${d.title}`);
     if (!dryRun) await upsertDeliverable(db, d);
-    synced++;
   }
-  console.log(`${dryRun ? 'Would sync' : 'Synced'} ${synced} deliverables.`);
+  console.log(`${dryRun ? 'Would sync' : 'Synced'} ${deliverables.length} deliverables.`);
 
   for (const e of await pendingTicketComments(db)) {
     if (!e.ticketId) continue;
