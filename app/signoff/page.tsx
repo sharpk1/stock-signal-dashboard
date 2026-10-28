@@ -8,8 +8,9 @@ import { PasswordProtection } from '@/app/components/PasswordProtection';
 const NAME_KEY = 'stock-signals-signoff-name';
 
 const PART_TITLES: Record<string, string> = {
-  A: 'Part A · Make it trustworthy',
+  A: 'Part A · Make it reliable',
   B: 'Part B · Your sources, done right',
+  C: 'Part C · Small upgrades',
 };
 
 function StatusBadge({ status }: { status: DeliverableStatus }) {
