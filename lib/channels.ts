@@ -29,6 +29,7 @@ export const CHANNELS: Channel[] = [
     handle: "@FinancialEducation",
     name: "Financial Education",
     weight: 0.1,
+    feed: 'longform',
   },
   {
     id: 3,
@@ -44,6 +45,7 @@ export const CHANNELS: Channel[] = [
     handle: "@bravosresearch",
     name: "Bravo's Research",
     weight: 0.1,
+    feed: 'longform',
   },
   {
     id: 5,
@@ -80,6 +82,18 @@ export const CHANNELS: Channel[] = [
     channelId: "UCUvvj5lwue7PspotMDjk5UA",
     handle: "@MeetKevin",
     name: "Meet Kevin",
+    weight: 0.1,
+    feed: 'longform',
+  },
+  {
+    id: 10,
+    // UNCONFIRMED: resolved from two independent third-party trackers, not from
+    // YouTube itself — this sandbox cannot reach youtube.com to check the
+    // channel page. Verify before trusting it; a wrong id makes the RSS fetch
+    // 404 and this channel yields nothing.
+    channelId: "UC12lnsYNt8_VthTNOuOGTmQ",
+    handle: "@jeremylefebvremakesmoney7934",
+    name: "Jeremy Lefebvre Makes Money",
     weight: 0.1,
     feed: 'longform',
   },
