@@ -6,6 +6,12 @@ export interface Channel {
   weight: number;
   source?: 'youtube' | 'substack';
   substackHandle?: string;
+  /**
+   * Pull this channel's live-streams playlist instead of its main uploads feed.
+   * Dumb Money Live posts Shorts and clips alongside the streams Ray actually
+   * wants, and only the streams playlist excludes them.
+   */
+  streamsOnly?: boolean;
 }
 
 export const CHANNELS: Channel[] = [
@@ -18,10 +24,11 @@ export const CHANNELS: Channel[] = [
   },
   {
     id: 3,
-    channelId: "UCWbHt74zrW8sd3XqFABMXDw",
+    channelId: "UCS01CiRDAiyhR_mTHXDW23A",
     handle: "@DumbMoneyLive",
     name: "Dumb Money Live",
     weight: 0.1,
+    streamsOnly: true,
   },
   {
     id: 4,

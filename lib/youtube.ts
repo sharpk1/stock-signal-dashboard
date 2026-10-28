@@ -23,6 +23,27 @@ function buildProxiedFetch(): typeof fetch | undefined {
     undiciFetch(input as string, { ...init, dispatcher } as Parameters<typeof undiciFetch>[1])) as unknown as typeof fetch;
 }
 
+/**
+ * YouTube exposes a channel's completed live streams as a system playlist whose
+ * id is the channel id with the `UC` prefix swapped for `UULV` (the same trick
+ * that turns `UC…` into the `UU…` uploads playlist). That playlist holds only
+ * finished streams — no Shorts, no regular uploads — which is the only reliable
+ * way to filter them out, since the RSS feed carries no duration or type field.
+ */
+export function liveStreamsPlaylistId(channelId: string): string {
+  if (!channelId.startsWith('UC')) {
+    throw new Error(`cannot derive a streams playlist from channel id "${channelId}" (expected a UC… id)`);
+  }
+  return `UULV${channelId.slice(2)}`;
+}
+
+export function channelFeedUrl(channel: Channel): string {
+  if (channel.streamsOnly) {
+    return `https://www.youtube.com/feeds/videos.xml?playlist_id=${liveStreamsPlaylistId(channel.channelId)}`;
+  }
+  return `https://www.youtube.com/feeds/videos.xml?channel_id=${channel.channelId}`;
+}
+
 export interface RssVideo {
   videoId: string;
   title: string;
@@ -44,7 +65,7 @@ export function parseRssFeed(xml: string): RssVideo[] {
 }
 
 export async function fetchRecentVideos(channel: Channel): Promise<RssVideo[]> {
-  const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${channel.channelId}`;
+  const url = channelFeedUrl(channel);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`RSS fetch failed for ${channel.handle}: ${res.status}`);
   const xml = await res.text();
@@ -53,6 +74,33 @@ export async function fetchRecentVideos(channel: Channel): Promise<RssVideo[]> {
   const recent = all.filter(v => new Date(v.publishedAt).getTime() >= cutoff);
   console.log(`[${channel.name}] ${recent.length} new video(s) in last 3 days`);
   return recent;
+}
+
+/**
+ * Read the caption-track languages back off a
+ * `YoutubeTranscriptNotAvailableLanguageError`. The library matches `lang`
+ * exactly and gives us no other way to see which tracks a video actually has,
+ * but it does list them in that error's message. Returns null for any other
+ * error, so callers can tell "wrong language" from "no captions at all".
+ */
+export function availableLangsFromError(err: unknown): string[] | null {
+  const msg = err instanceof Error ? err.message : '';
+  const match = /Available languages:\s*(.*)$/.exec(msg);
+  if (!match) return null;
+  return match[1].split(',').map(l => l.trim()).filter(Boolean);
+}
+
+/**
+ * Pick the best English caption track: plain `en` if present, otherwise a
+ * regional variant such as `en-US` or `en-GB`. Returns undefined when a video
+ * has captions but none in English, so we skip it rather than summarising a
+ * dubbed or translated track.
+ */
+export function pickEnglishLang(availableLangs: string[]): string | undefined {
+  return (
+    availableLangs.find(l => l.toLowerCase() === 'en') ??
+    availableLangs.find(l => l.toLowerCase().startsWith('en'))
+  );
 }
 
 export async function fetchTranscript(videoId: string): Promise<string> {
@@ -64,11 +112,25 @@ export async function fetchTranscript(videoId: string): Promise<string> {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const fetchFn = buildProxiedFetch();
+    const config = (lang: string) => ({ lang, ...(fetchFn ? { fetch: fetchFn } : {}) });
     try {
-      const items = await YoutubeTranscript.fetchTranscript(
-        videoId,
-        fetchFn ? { fetch: fetchFn } : undefined,
-      );
+      let items;
+      try {
+        items = await YoutubeTranscript.fetchTranscript(videoId, config('en'));
+      } catch (err) {
+        // No exact `en` track. If the video has English under a regional code,
+        // take that; if it has captions but none English, don't fall back to
+        // another language.
+        const langs = availableLangsFromError(err);
+        if (!langs) throw err;
+        const english = pickEnglishLang(langs);
+        if (!english) {
+          throw new Error(
+            `no English captions for ${videoId} (available: ${langs.join(', ') || 'none'})`,
+          );
+        }
+        items = await YoutubeTranscript.fetchTranscript(videoId, config(english));
+      }
       const text = items.map(item => item.text).join(' ');
       if (text.trim().length > 0) return text;
       lastErr = new Error('empty transcript');
