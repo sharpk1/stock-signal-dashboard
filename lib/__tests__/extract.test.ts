@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseExtractionResponse, type TickerMention } from '@/lib/extract';
+import { parseExtractionResponse, chunkTranscript, mergeMentions, type TickerMention } from '@/lib/extract';
 
 describe('parseExtractionResponse', () => {
   it('parses valid JSON array from Claude response', () => {
@@ -47,5 +47,75 @@ describe('parseExtractionResponse', () => {
     const result = parseExtractionResponse(raw);
     expect(result).toHaveLength(1);
     expect(result[0].ticker).toBe('MSFT');
+  });
+});
+
+describe('chunkTranscript', () => {
+  it('leaves a short transcript in one piece', () => {
+    expect(chunkTranscript('short enough')).toEqual(['short enough']);
+  });
+
+  it('splits a long transcript instead of truncating it', () => {
+    // A three-hour livestream runs past 150k characters; nothing may be lost.
+    const transcript = 'word '.repeat(40_000).trim(); // 199,999 chars
+    const chunks = chunkTranscript(transcript);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every(c => c.length <= 60_000)).toBe(true);
+    expect(chunks.join(' ')).toBe(transcript);
+  });
+
+  it('breaks on whitespace so no word is cut in half', () => {
+    const transcript = Array.from({ length: 50 }, (_, i) => `token${i}`).join(' ');
+    const chunks = chunkTranscript(transcript, 40);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      for (const token of chunk.split(' ')) {
+        expect(token).toMatch(/^token\d+$/);
+      }
+    }
+    expect(chunks.join(' ')).toBe(transcript);
+  });
+
+  it('covers the whole transcript when it divides exactly', () => {
+    const transcript = 'abcde fghij';
+    expect(chunkTranscript(transcript, 11).join(' ')).toBe(transcript);
+  });
+});
+
+describe('mergeMentions', () => {
+  const mention = (ticker: string, conviction: number, quote: string): TickerMention => ({
+    ticker,
+    company: ticker,
+    sentiment: 'bullish',
+    conviction,
+    quote,
+  });
+
+  it('keeps the highest-conviction pass for a ticker repeated across chunks', () => {
+    const merged = mergeMentions([
+      [mention('NVDA', 40, 'might look at it')],
+      [mention('NVDA', 90, 'I am buying more today')],
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].conviction).toBe(90);
+    expect(merged[0].quote).toBe('I am buying more today');
+  });
+
+  it('unions tickers from different chunks, ranked by conviction', () => {
+    const merged = mergeMentions([
+      [mention('AAPL', 50, 'a')],
+      [mention('TSLA', 80, 'b')],
+    ]);
+    expect(merged.map(m => m.ticker)).toEqual(['TSLA', 'AAPL']);
+  });
+
+  it('treats the same ticker in different cases as one', () => {
+    const merged = mergeMentions([[mention('msft', 30, 'a')], [mention('MSFT', 70, 'b')]]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].ticker).toBe('MSFT');
+  });
+
+  it('returns an empty list when no chunk found anything', () => {
+    expect(mergeMentions([[], []])).toEqual([]);
   });
 });

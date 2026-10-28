@@ -7,6 +7,27 @@ import { extractTickers, generateSummary } from '@/lib/extract';
 const MAX_TRANSCRIPT_ATTEMPTS = 3; // give up on a video after this many failed runs
 const TIME_BUDGET_MS = 240_000;    // stop gracefully before Vercel's 300s hard limit
 
+// Caption lag: YouTube publishes a finished livestream to the feed well before
+// its captions are ready — often hours later. Three attempts is right for a
+// normal upload, but it would burn through in a single morning and abandon a
+// stream permanently, just before the captions landed. So while a stream is
+// still fresh enough that captions are plausibly coming, keep retrying.
+const CAPTION_LAG_WINDOW_MS = 48 * 60 * 60 * 1000;
+const MAX_STREAM_TRANSCRIPT_ATTEMPTS = 12;
+
+export function maxTranscriptAttempts(
+  channel: Channel,
+  publishedAt: string,
+  now: number = Date.now(),
+): number {
+  if (!channel.streamsOnly) return MAX_TRANSCRIPT_ATTEMPTS;
+  const published = new Date(publishedAt).getTime();
+  if (!Number.isFinite(published)) return MAX_TRANSCRIPT_ATTEMPTS;
+  return now - published <= CAPTION_LAG_WINDOW_MS
+    ? MAX_STREAM_TRANSCRIPT_ATTEMPTS
+    : MAX_TRANSCRIPT_ATTEMPTS;
+}
+
 export interface NewVideo {
   title: string;
   channelName: string;
@@ -94,7 +115,8 @@ export async function runFetch(): Promise<FetchResult> {
         continue;
       }
 
-      if (!existing.transcript && existing.transcript_attempts >= MAX_TRANSCRIPT_ATTEMPTS) {
+      const attemptCap = maxTranscriptAttempts(channel, video.publishedAt);
+      if (!existing.transcript && existing.transcript_attempts >= attemptCap) {
         // repeatedly couldn't get a transcript (likely no captions) — stop retrying
         console.log(`Skipped (no transcript after ${existing.transcript_attempts} attempts): ${video.title}`);
         continue;

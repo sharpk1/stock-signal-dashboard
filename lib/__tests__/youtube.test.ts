@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { parseRssFeed, type RssVideo } from '@/lib/youtube';
+import {
+  parseRssFeed,
+  channelFeedUrl,
+  liveStreamsPlaylistId,
+  availableLangsFromError,
+  pickEnglishLang,
+} from '@/lib/youtube';
+import type { Channel } from '@/lib/channels';
 
 const SAMPLE_RSS = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015"
@@ -42,5 +49,67 @@ describe('parseRssFeed', () => {
     const recent = parseRssFeed(rss).filter(v => new Date(v.publishedAt).getTime() >= cutoff);
     expect(recent).toHaveLength(1);
     expect(recent[0].videoId).toBe('recent1');
+  });
+});
+
+const DUMB_MONEY: Channel = {
+  id: 3,
+  channelId: 'UCS01CiRDAiyhR_mTHXDW23A',
+  handle: '@DumbMoneyLive',
+  name: 'Dumb Money Live',
+  weight: 0.1,
+  streamsOnly: true,
+};
+
+describe('liveStreamsPlaylistId', () => {
+  it('swaps the UC prefix for UULV', () => {
+    expect(liveStreamsPlaylistId('UCS01CiRDAiyhR_mTHXDW23A')).toBe('UULVS01CiRDAiyhR_mTHXDW23A');
+  });
+
+  it('rejects an id that is not a UC channel id', () => {
+    expect(() => liveStreamsPlaylistId('thepopularinvestor')).toThrow(/expected a UC/);
+  });
+});
+
+describe('channelFeedUrl', () => {
+  it('uses the streams playlist feed for a streams-only channel', () => {
+    expect(channelFeedUrl(DUMB_MONEY)).toBe(
+      'https://www.youtube.com/feeds/videos.xml?playlist_id=UULVS01CiRDAiyhR_mTHXDW23A',
+    );
+  });
+
+  it('uses the channel feed for a normal channel', () => {
+    const channel: Channel = { ...DUMB_MONEY, streamsOnly: false, channelId: 'UCabc123' };
+    expect(channelFeedUrl(channel)).toBe(
+      'https://www.youtube.com/feeds/videos.xml?channel_id=UCabc123',
+    );
+  });
+});
+
+describe('availableLangsFromError', () => {
+  it('reads the caption languages out of the library error message', () => {
+    const err = new Error(
+      'No transcripts are available in en this video (abc123). Available languages: en-US, es, fr',
+    );
+    expect(availableLangsFromError(err)).toEqual(['en-US', 'es', 'fr']);
+  });
+
+  it('returns null for an unrelated error so callers can rethrow it', () => {
+    expect(availableLangsFromError(new Error('Transcript is disabled on this video'))).toBeNull();
+    expect(availableLangsFromError('not an error')).toBeNull();
+  });
+});
+
+describe('pickEnglishLang', () => {
+  it('prefers plain en', () => {
+    expect(pickEnglishLang(['es', 'en', 'en-GB'])).toBe('en');
+  });
+
+  it('falls back to a regional English variant', () => {
+    expect(pickEnglishLang(['es', 'en-US'])).toBe('en-US');
+  });
+
+  it('returns undefined when no track is English', () => {
+    expect(pickEnglishLang(['es', 'fr', 'de'])).toBeUndefined();
   });
 });
