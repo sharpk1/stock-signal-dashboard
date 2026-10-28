@@ -1,7 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import { YoutubeTranscript } from 'youtube-transcript';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
-import { Channel } from '@/lib/channels';
+import { Channel, ChannelFeed } from '@/lib/channels';
 
 // YouTube blocks data-center IPs, so transcript requests are routed through
 // Webshare rotating residential proxies. We inject a proxied fetch into the
@@ -24,22 +24,32 @@ function buildProxiedFetch(): typeof fetch | undefined {
 }
 
 /**
- * YouTube exposes a channel's completed live streams as a system playlist whose
- * id is the channel id with the `UC` prefix swapped for `UULV` (the same trick
- * that turns `UC…` into the `UU…` uploads playlist). That playlist holds only
- * finished streams — no Shorts, no regular uploads — which is the only reliable
- * way to filter them out, since the RSS feed carries no duration or type field.
+ * YouTube keeps a system playlist per upload type, each id being the channel id
+ * with the `UC` prefix swapped for a type prefix (the same trick that turns
+ * `UC…` into the `UU…` uploads playlist):
+ *
+ *   UULV — completed livestreams
+ *   UULF — regular long-form uploads
+ *
+ * Each excludes the other types, Shorts included. This is the only reliable way
+ * to filter a channel down to one kind of upload: the RSS feed carries no
+ * duration or video-type field.
  */
-export function liveStreamsPlaylistId(channelId: string): string {
+const FEED_PLAYLIST_PREFIX: Record<ChannelFeed, string> = {
+  streams: 'UULV',
+  longform: 'UULF',
+};
+
+export function feedPlaylistId(channelId: string, feed: ChannelFeed): string {
   if (!channelId.startsWith('UC')) {
-    throw new Error(`cannot derive a streams playlist from channel id "${channelId}" (expected a UC… id)`);
+    throw new Error(`cannot derive a ${feed} playlist from channel id "${channelId}" (expected a UC… id)`);
   }
-  return `UULV${channelId.slice(2)}`;
+  return `${FEED_PLAYLIST_PREFIX[feed]}${channelId.slice(2)}`;
 }
 
 export function channelFeedUrl(channel: Channel): string {
-  if (channel.streamsOnly) {
-    return `https://www.youtube.com/feeds/videos.xml?playlist_id=${liveStreamsPlaylistId(channel.channelId)}`;
+  if (channel.feed) {
+    return `https://www.youtube.com/feeds/videos.xml?playlist_id=${feedPlaylistId(channel.channelId, channel.feed)}`;
   }
   return `https://www.youtube.com/feeds/videos.xml?channel_id=${channel.channelId}`;
 }

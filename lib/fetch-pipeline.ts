@@ -20,7 +20,7 @@ export function maxTranscriptAttempts(
   publishedAt: string,
   now: number = Date.now(),
 ): number {
-  if (!channel.streamsOnly) return MAX_TRANSCRIPT_ATTEMPTS;
+  if (channel.feed !== 'streams') return MAX_TRANSCRIPT_ATTEMPTS;
   const published = new Date(publishedAt).getTime();
   if (!Number.isFinite(published)) return MAX_TRANSCRIPT_ATTEMPTS;
   return now - published <= CAPTION_LAG_WINDOW_MS

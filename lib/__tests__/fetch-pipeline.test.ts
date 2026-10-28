@@ -11,7 +11,16 @@ const streamChannel: Channel = {
   handle: '@DumbMoneyLive',
   name: 'Dumb Money Live',
   weight: 0.1,
-  streamsOnly: true,
+  feed: 'streams',
+};
+
+const longFormChannel: Channel = {
+  id: 9,
+  channelId: 'UCUvvj5lwue7PspotMDjk5UA',
+  handle: '@MeetKevin',
+  name: 'Meet Kevin',
+  weight: 0.1,
+  feed: 'longform',
 };
 
 const normalChannel: Channel = {
@@ -41,6 +50,10 @@ describe('maxTranscriptAttempts', () => {
 
   it('leaves normal uploads on three attempts', () => {
     expect(maxTranscriptAttempts(normalChannel, publishedHoursAgo(1), NOW)).toBe(3);
+  });
+
+  it('leaves a long-form-only channel on three attempts — caption lag is a livestream problem', () => {
+    expect(maxTranscriptAttempts(longFormChannel, publishedHoursAgo(1), NOW)).toBe(3);
   });
 
   it('falls back to three attempts for an unparseable publish date', () => {
