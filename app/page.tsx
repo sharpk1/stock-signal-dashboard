@@ -11,6 +11,7 @@ import { CHANNELS } from '@/lib/channels';
 import type { ChannelWinRate } from '@/app/api/winrate/route';
 import type { VideoUrl } from '@/app/api/videos/route';
 import type { DigestVideo } from '@/app/api/digest/route';
+import type { ChannelToggle } from '@/app/api/channels/route';
 import type { ConvergenceAlert } from '@/lib/db';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
 
@@ -117,6 +118,12 @@ function formatFetchedAt(dateStr: string): string {
 
 const QUOTE_TRUNCATE = 120;
 
+async function fetchDisabledChannels(): Promise<Set<string>> {
+  const res = await fetch('/api/channels');
+  const data: ChannelToggle[] = await res.json();
+  return new Set(data.filter(c => !c.enabled).map(c => c.channelId));
+}
+
 export default function Page() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,6 +131,7 @@ export default function Page() {
   const [lastFetched, setLastFetched] = useState<string | null>(null);
   const [fetchResult, setFetchResult] = useState<{ videosProcessed: number; tickersFound: number; errors: string[] } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [disabledChannels, setDisabledChannels] = useState<Set<string> | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [modalQuote, setModalQuote] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -180,6 +188,30 @@ export default function Page() {
 
   useEffect(() => { loadLeaderboard(leaderboardDays); }, [loadLeaderboard, leaderboardDays]);
   useEffect(() => { loadAlerts(); }, [loadAlerts]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchDisabledChannels()
+      .then(ids => { if (!cancelled) setDisabledChannels(ids); })
+      .catch(() => { /* leave the switches disabled rather than guess */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function toggleChannel(channelId: string, enabled: boolean) {
+    setDisabledChannels(prev => {
+      const next = new Set(prev ?? []);
+      if (enabled) next.delete(channelId);
+      else next.add(channelId);
+      return next;
+    });
+    const res = await fetch('/api/channels', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channelId, enabled }),
+    });
+    // Server refused — resync rather than leave the switch lying.
+    if (!res.ok) setDisabledChannels(await fetchDisabledChannels());
+  }
 
   const loadDigest = useCallback(async (days: number) => {
     setDigestLoading(true);
@@ -492,15 +524,39 @@ export default function Page() {
         {activeTab === 'signals' && (<>
         {/* Channel project links */}
         <div className="flex flex-wrap gap-2 mb-4">
-          {CHANNELS.map(ch => (
-            <Link
-              key={ch.id}
-              href={`/channel/${ch.channelId}`}
-              className="px-3 py-1.5 rounded-full text-xs font-medium bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600 transition-colors"
-            >
-              {ch.name} →
-            </Link>
-          ))}
+          {CHANNELS.map(ch => {
+            const enabled = !disabledChannels?.has(ch.channelId);
+            return (
+              <div
+                key={ch.id}
+                className={`flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full text-xs font-medium bg-white border border-gray-200 transition-colors ${
+                  enabled ? 'text-gray-600' : 'text-gray-400'
+                }`}
+              >
+                <button
+                  onClick={() => toggleChannel(ch.channelId, !enabled)}
+                  disabled={disabledChannels === null}
+                  aria-pressed={enabled}
+                  aria-label={`${enabled ? 'Stop' : 'Resume'} fetching new ${ch.name} items`}
+                  title={enabled
+                    ? `${ch.name} is on — new items are fetched`
+                    : `${ch.name} is off — no new items are fetched`}
+                  className={`relative w-7 h-4 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
+                    enabled ? 'bg-blue-600' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
+                      enabled ? 'left-3.5' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+                <Link href={`/channel/${ch.channelId}`} className="hover:text-blue-600 transition-colors">
+                  {ch.name} →
+                </Link>
+              </div>
+            );
+          })}
         </div>
 
         {/* Leaderboard time range selector */}
