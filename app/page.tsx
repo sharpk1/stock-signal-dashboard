@@ -14,6 +14,7 @@ import type { ChannelToggle } from '@/app/api/channels/route';
 import type { ChatSource } from '@/app/api/chat/route';
 import { PASTE_TYPES, PASTE_TYPE_LABELS, todayIso, MIN_PASTE_CHARS, type PasteType } from '@/lib/paste';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
+import { TranscriptPanel } from '@/app/components/TranscriptPanel';
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
   const styles: Record<string, string> = {
@@ -512,6 +513,7 @@ export default function Page() {
                           ) : (
                             <p className="text-sm text-gray-400 italic">No summary available</p>
                           )}
+                          <TranscriptPanel videoId={v.video_id} />
                         </div>
                       )}
                     </div>
