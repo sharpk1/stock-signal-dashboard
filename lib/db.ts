@@ -71,6 +71,8 @@ export async function initDb(db: Client): Promise<void> {
     'ALTER TABLE videos ADD COLUMN summary TEXT',
     'ALTER TABLE videos ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE videos ADD COLUMN transcript_attempts INTEGER NOT NULL DEFAULT 0',
+    // A channel is on unless someone turns it off, so existing rows default to 1.
+    'ALTER TABLE channels ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1',
   ]) {
     try {
       await db.execute(stmt);
@@ -126,6 +128,32 @@ export async function saveChannel(db: Client, channel: Channel): Promise<void> {
       weight: channel.weight,
     },
   });
+}
+
+/**
+ * Channel ids the user has switched off. `saveChannel` never writes the
+ * `enabled` column, so a channel stays off across fetch runs, and a channel
+ * with no row yet counts as on.
+ */
+export async function getDisabledChannelIds(db: Client): Promise<Set<string>> {
+  const rows = (await db.execute(
+    'SELECT channel_id FROM channels WHERE enabled = 0',
+  )).rows as unknown as { channel_id: string }[];
+  return new Set(rows.map(r => r.channel_id));
+}
+
+export async function setChannelEnabled(
+  db: Client,
+  channelId: string,
+  enabled: boolean,
+): Promise<void> {
+  const result = await db.execute({
+    sql: 'UPDATE channels SET enabled = ? WHERE channel_id = ?',
+    args: [enabled ? 1 : 0, channelId],
+  });
+  if (result.rowsAffected === 0) {
+    throw new Error(`unknown channel: ${channelId}`);
+  }
 }
 
 export async function saveVideo(

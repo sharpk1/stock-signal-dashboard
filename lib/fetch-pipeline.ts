@@ -1,5 +1,5 @@
 import { CHANNELS, Channel } from '@/lib/channels';
-import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert, bumpTranscriptAttempts } from '@/lib/db';
+import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert, bumpTranscriptAttempts, getDisabledChannelIds } from '@/lib/db';
 import { fetchRecentVideos, fetchTranscript } from '@/lib/youtube';
 import { fetchSubstackPosts, extractSubstackContent, SubstackPost } from '@/lib/substack';
 import { extractTickers, generateSummary } from '@/lib/extract';
@@ -20,7 +20,7 @@ export function maxTranscriptAttempts(
   publishedAt: string,
   now: number = Date.now(),
 ): number {
-  if (!channel.streamsOnly) return MAX_TRANSCRIPT_ATTEMPTS;
+  if (channel.feed !== 'streams') return MAX_TRANSCRIPT_ATTEMPTS;
   const published = new Date(publishedAt).getTime();
   if (!Number.isFinite(published)) return MAX_TRANSCRIPT_ATTEMPTS;
   return now - published <= CAPTION_LAG_WINDOW_MS
@@ -43,6 +43,7 @@ export interface FetchResult {
   errors: string[];
   newAlerts: string[];
   newVideos: NewVideo[];
+  skippedChannels: string[];
 }
 
 function videoUrl(channel: Channel, videoId: string): string {
@@ -60,10 +61,20 @@ export async function runFetch(): Promise<FetchResult> {
   const newVideos: NewVideo[] = [];
   const deadline = Date.now() + TIME_BUDGET_MS;
   let timedOut = false;
+  const disabled = await getDisabledChannelIds(db);
+  const skippedChannels: string[] = [];
 
   for (const channel of CHANNELS) {
     if (timedOut) break;
+    // Keep the row current either way, so a switched-off channel still shows
+    // up in the UI with its toggle intact.
     await saveChannel(db, channel);
+
+    if (disabled.has(channel.channelId)) {
+      skippedChannels.push(channel.name);
+      console.log(`${channel.name}: switched off — skipping`);
+      continue;
+    }
 
     let videos: Array<SubstackPost | Awaited<ReturnType<typeof fetchRecentVideos>>[number]>;
     try {
@@ -238,5 +249,5 @@ export async function runFetch(): Promise<FetchResult> {
     }
   }
 
-  return { success: true, timedOut, videosProcessed, tickersFound, errors, newAlerts, newVideos };
+  return { success: true, timedOut, videosProcessed, tickersFound, errors, newAlerts, newVideos, skippedChannels };
 }

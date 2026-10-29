@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { initDb, saveChannel, saveVideo, saveMention, getLeaderboard, getMentionDetails,
-         updateVideoTranscript, saveMemory, getMemories, saveConversation, getRecentConversations } from '@/lib/db';
+         updateVideoTranscript, saveMemory, getMemories, saveConversation, getRecentConversations,
+         getDisabledChannelIds, setChannelEnabled } from '@/lib/db';
 
 async function makeTestDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -169,5 +170,52 @@ describe('saveConversation and getRecentConversations', () => {
     const convs = await getRecentConversations(db, 2);
     expect(convs).toHaveLength(2);
     expect(convs[0].question).toBe('Q3'); // most recent first
+  });
+});
+
+describe('channel on/off flag', () => {
+  const channel = { id: 1, channelId: 'UC123', handle: '@test', name: 'Test Channel', weight: 0.5 };
+
+  it('treats a newly saved channel as on', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    expect(await getDisabledChannelIds(db)).toEqual(new Set());
+  });
+
+  it('reports a channel that has been switched off', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    await setChannelEnabled(db, 'UC123', false);
+    expect(await getDisabledChannelIds(db)).toEqual(new Set(['UC123']));
+  });
+
+  it('switches a channel back on', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    await setChannelEnabled(db, 'UC123', false);
+    await setChannelEnabled(db, 'UC123', true);
+    expect(await getDisabledChannelIds(db)).toEqual(new Set());
+  });
+
+  it('keeps a channel off across fetch runs, which re-save the channel row', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    await setChannelEnabled(db, 'UC123', false);
+    // A fetch run upserts every channel; that must not quietly switch it back on.
+    await saveChannel(db, { ...channel, name: 'Renamed' });
+    expect(await getDisabledChannelIds(db)).toEqual(new Set(['UC123']));
+  });
+
+  it('rejects an unknown channel id', async () => {
+    const db = await makeTestDb();
+    await expect(setChannelEnabled(db, 'UC-nope', false)).rejects.toThrow(/unknown channel/);
+  });
+
+  it('leaves other channels alone', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    await saveChannel(db, { ...channel, id: 2, channelId: 'UC456', name: 'Other' });
+    await setChannelEnabled(db, 'UC123', false);
+    expect(await getDisabledChannelIds(db)).toEqual(new Set(['UC123']));
   });
 });

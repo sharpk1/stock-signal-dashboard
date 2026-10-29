@@ -7,12 +7,20 @@ export interface Channel {
   source?: 'youtube' | 'substack';
   substackHandle?: string;
   /**
-   * Pull this channel's live-streams playlist instead of its main uploads feed.
-   * Dumb Money Live posts Shorts and clips alongside the streams Ray actually
-   * wants, and only the streams playlist excludes them.
+   * Which slice of a channel's uploads to pull. YouTube keeps a system playlist
+   * per upload type, and a channel's main feed mixes all of them together with
+   * no duration or type field to filter on — so the playlist is the only
+   * reliable filter.
+   *
+   *   'streams'  — completed livestreams only (no Shorts, no regular uploads)
+   *   'longform' — regular long-form uploads only (no Shorts, no livestreams)
+   *
+   * Omitted pulls the channel's whole feed.
    */
-  streamsOnly?: boolean;
+  feed?: ChannelFeed;
 }
+
+export type ChannelFeed = 'streams' | 'longform';
 
 export const CHANNELS: Channel[] = [
   {
@@ -21,6 +29,7 @@ export const CHANNELS: Channel[] = [
     handle: "@FinancialEducation",
     name: "Financial Education",
     weight: 0.1,
+    feed: 'longform',
   },
   {
     id: 3,
@@ -28,7 +37,7 @@ export const CHANNELS: Channel[] = [
     handle: "@DumbMoneyLive",
     name: "Dumb Money Live",
     weight: 0.1,
-    streamsOnly: true,
+    feed: 'streams',
   },
   {
     id: 4,
@@ -36,6 +45,7 @@ export const CHANNELS: Channel[] = [
     handle: "@bravosresearch",
     name: "Bravo's Research",
     weight: 0.1,
+    feed: 'longform',
   },
   {
     id: 5,
@@ -73,5 +83,18 @@ export const CHANNELS: Channel[] = [
     handle: "@MeetKevin",
     name: "Meet Kevin",
     weight: 0.1,
+    feed: 'longform',
+  },
+  {
+    id: 10,
+    // UNCONFIRMED: resolved from two independent third-party trackers, not from
+    // YouTube itself — this sandbox cannot reach youtube.com to check the
+    // channel page. Verify before trusting it; a wrong id makes the RSS fetch
+    // 404 and this channel yields nothing.
+    channelId: "UC12lnsYNt8_VthTNOuOGTmQ",
+    handle: "@jeremylefebvremakesmoney7934",
+    name: "Jeremy Lefebvre Makes Money",
+    weight: 0.1,
+    feed: 'longform',
   },
 ];

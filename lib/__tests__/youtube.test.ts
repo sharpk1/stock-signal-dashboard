@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseRssFeed,
   channelFeedUrl,
-  liveStreamsPlaylistId,
+  feedPlaylistId,
   availableLangsFromError,
   pickEnglishLang,
 } from '@/lib/youtube';
@@ -58,16 +58,29 @@ const DUMB_MONEY: Channel = {
   handle: '@DumbMoneyLive',
   name: 'Dumb Money Live',
   weight: 0.1,
-  streamsOnly: true,
+  feed: 'streams',
 };
 
-describe('liveStreamsPlaylistId', () => {
-  it('swaps the UC prefix for UULV', () => {
-    expect(liveStreamsPlaylistId('UCS01CiRDAiyhR_mTHXDW23A')).toBe('UULVS01CiRDAiyhR_mTHXDW23A');
+const MEET_KEVIN: Channel = {
+  id: 9,
+  channelId: 'UCUvvj5lwue7PspotMDjk5UA',
+  handle: '@MeetKevin',
+  name: 'Meet Kevin',
+  weight: 0.1,
+  feed: 'longform',
+};
+
+describe('feedPlaylistId', () => {
+  it('swaps the UC prefix for UULV on the streams playlist', () => {
+    expect(feedPlaylistId('UCS01CiRDAiyhR_mTHXDW23A', 'streams')).toBe('UULVS01CiRDAiyhR_mTHXDW23A');
+  });
+
+  it('swaps the UC prefix for UULF on the long-form playlist', () => {
+    expect(feedPlaylistId('UCUvvj5lwue7PspotMDjk5UA', 'longform')).toBe('UULFUvvj5lwue7PspotMDjk5UA');
   });
 
   it('rejects an id that is not a UC channel id', () => {
-    expect(() => liveStreamsPlaylistId('thepopularinvestor')).toThrow(/expected a UC/);
+    expect(() => feedPlaylistId('thepopularinvestor', 'streams')).toThrow(/expected a UC/);
   });
 });
 
@@ -78,8 +91,14 @@ describe('channelFeedUrl', () => {
     );
   });
 
-  it('uses the channel feed for a normal channel', () => {
-    const channel: Channel = { ...DUMB_MONEY, streamsOnly: false, channelId: 'UCabc123' };
+  it('uses the long-form playlist feed for a long-form-only channel', () => {
+    expect(channelFeedUrl(MEET_KEVIN)).toBe(
+      'https://www.youtube.com/feeds/videos.xml?playlist_id=UULFUvvj5lwue7PspotMDjk5UA',
+    );
+  });
+
+  it('uses the channel feed when no feed is pinned', () => {
+    const channel: Channel = { ...DUMB_MONEY, feed: undefined, channelId: 'UCabc123' };
     expect(channelFeedUrl(channel)).toBe(
       'https://www.youtube.com/feeds/videos.xml?channel_id=UCabc123',
     );
