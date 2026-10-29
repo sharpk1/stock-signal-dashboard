@@ -292,6 +292,25 @@ export async function getSourceAlertStates(db: Client): Promise<SourceAlertState
   }));
 }
 
+/** The channel's most recent stored summary, for the "what changed" section. */
+export async function getLatestChannelSummary(
+  db: Client,
+  channelId: string,
+  excludeVideoRowId?: number,
+): Promise<string | null> {
+  const rows = (await db.execute({
+    sql: `
+      SELECT v.summary FROM videos v
+      WHERE v.channel_id = ? AND v.summary IS NOT NULL AND v.summary != ''
+        AND (? IS NULL OR v.id != ?)
+      ORDER BY v.published_at DESC, v.id DESC
+      LIMIT 1
+    `,
+    args: [channelId, excludeVideoRowId ?? null, excludeVideoRowId ?? -1],
+  })).rows as unknown as { summary: string }[];
+  return rows.length > 0 ? rows[0].summary : null;
+}
+
 export async function saveVideo(
   db: Client,
   video: { videoId: string; channelId: string; title: string; publishedAt: string }
