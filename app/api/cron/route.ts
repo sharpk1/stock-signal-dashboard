@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { runFetch } from '@/lib/fetch-pipeline';
-import { sendNewVideosEmail } from '@/lib/email';
+import { sendNewVideosEmail, sendAlertEmail } from '@/lib/email';
+import { getDb, getSourceAlertStates } from '@/lib/db';
+import { decideAlerts } from '@/lib/alerts';
 
 export const maxDuration = 300;
 
@@ -16,7 +18,7 @@ export async function GET(request: Request) {
     const result = await runFetch();
 
     let emailed = false;
-    if (result.newVideos.length > 0 && process.env.RESEND_API_KEY && process.env.NOTIFY_EMAIL) {
+    if (result.newVideos.length > 0 && process.env.POSTMARK_SERVER_TOKEN && process.env.NOTIFY_EMAIL) {
       try {
         await sendNewVideosEmail(result.newVideos);
         emailed = true;
@@ -26,7 +28,19 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ ...result, emailed });
+    // Tell someone when a source breaks or the AI credit runs out — this runs
+    // unattended, so nobody sees the response above.
+    let alerted = false;
+    try {
+      const db = await getDb();
+      const decision = decideAlerts(await getSourceAlertStates(db), result.errors);
+      alerted = await sendAlertEmail(decision);
+    } catch (err) {
+      console.error('alert send failed:', err);
+      result.errors.push(`alert send failed: ${err instanceof Error ? err.message : err}`);
+    }
+
+    return NextResponse.json({ ...result, emailed, alerted });
   } catch (err) {
     console.error('cron failed:', err);
     return NextResponse.json(

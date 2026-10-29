@@ -249,6 +249,49 @@ export async function getSourceStatuses(db: Client): Promise<SourceStatus[]> {
   }));
 }
 
+export interface SourceAlertState {
+  channelId: string;
+  name: string;
+  /** Outcome of the most recent run, or null if the source has never run. */
+  latestOk: boolean | null;
+  latestError: string | null;
+  /** Outcome of the run before that — what makes a new failure detectable. */
+  previousOk: boolean | null;
+  previousError: string | null;
+}
+
+/**
+ * The last two runs per source. Alerting compares them so a source that breaks
+ * is reported once, when it breaks, rather than on every run for as long as it
+ * stays broken.
+ */
+export async function getSourceAlertStates(db: Client): Promise<SourceAlertState[]> {
+  const rows = (await db.execute(`
+    SELECT
+      c.channel_id AS channelId,
+      c.name       AS name,
+      (SELECT r.success FROM source_runs r WHERE r.channel_id = c.channel_id
+        ORDER BY r.ran_at DESC, r.id DESC LIMIT 1) AS latestOk,
+      (SELECT r.error FROM source_runs r WHERE r.channel_id = c.channel_id
+        ORDER BY r.ran_at DESC, r.id DESC LIMIT 1) AS latestError,
+      (SELECT r.success FROM source_runs r WHERE r.channel_id = c.channel_id
+        ORDER BY r.ran_at DESC, r.id DESC LIMIT 1 OFFSET 1) AS previousOk,
+      (SELECT r.error FROM source_runs r WHERE r.channel_id = c.channel_id
+        ORDER BY r.ran_at DESC, r.id DESC LIMIT 1 OFFSET 1) AS previousError
+    FROM channels c
+    ORDER BY c.id
+  `)).rows as unknown as Record<string, string | number | null>[];
+
+  return rows.map(r => ({
+    channelId: String(r.channelId),
+    name: String(r.name),
+    latestOk: r.latestOk === null ? null : Boolean(Number(r.latestOk)),
+    latestError: r.latestError === null ? null : String(r.latestError),
+    previousOk: r.previousOk === null ? null : Boolean(Number(r.previousOk)),
+    previousError: r.previousError === null ? null : String(r.previousError),
+  }));
+}
+
 export async function saveVideo(
   db: Client,
   video: { videoId: string; channelId: string; title: string; publishedAt: string }
