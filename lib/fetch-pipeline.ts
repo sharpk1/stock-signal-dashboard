@@ -5,6 +5,8 @@ import { fetchSubstackPosts, extractSubstackContent, SubstackPost,
          cookieAgeWarning, emptyHarvestWarning, describeUnusablePost } from '@/lib/substack';
 import { extractTickers, generateSummary } from '@/lib/extract';
 import { resetUsage, getUsage, type RunUsage } from '@/lib/usage';
+import { getBudgetStatus } from '@/lib/claude';
+import { BudgetReachedError, type BudgetStatus } from '@/lib/budget';
 
 const MAX_TRANSCRIPT_ATTEMPTS = 3; // give up on a video after this many failed runs
 const TIME_BUDGET_MS = 240_000;    // stop gracefully before Vercel's 300s hard limit
@@ -53,6 +55,10 @@ export interface FetchResult {
    */
   fetchSources: Record<string, VideoSource>;
   usage: RunUsage;
+  /** True once the monthly AI cap stopped summaries and extraction this run. */
+  budgetReached: boolean;
+  /** This month's spend against the cap, as of the end of the run. */
+  budget: BudgetStatus;
 }
 
 function videoUrl(channel: Channel, videoId: string): string {
@@ -74,6 +80,24 @@ export async function runFetch(): Promise<FetchResult> {
   const skippedChannels: string[] = [];
   const fetchSources: Record<string, VideoSource> = {};
   resetUsage();
+
+  // Once the month's AI cap is reached, items are still fetched and saved but
+  // not analysed. They stay unprocessed (no mentions), so the first run after
+  // the cap lifts picks them up. Reported once per run, not once per item, and
+  // without a channel-name prefix so it never reads as a source failing.
+  let budgetReached = false;
+  const noteBudgetReached = (err: BudgetReachedError) => {
+    if (budgetReached) return;
+    budgetReached = true;
+    errors.push(err.message);
+    console.warn(err.message);
+  };
+  const checkBudget = async (): Promise<boolean> => {
+    if (budgetReached) return false;
+    const status = await getBudgetStatus();
+    if (status.reached) noteBudgetReached(new BudgetReachedError(status.spentUsd, status.capUsd));
+    return !budgetReached;
+  };
 
   for (const channel of CHANNELS) {
     if (timedOut) break;
@@ -228,21 +252,31 @@ export async function runFetch(): Promise<FetchResult> {
         }
 
         let summary = '';
-        try {
-          // What this person said last time, so the summary can say what moved.
-          const previousSummary = await getLatestChannelSummary(db, channel.channelId, videoRowId);
-          summary = await generateSummary(transcript, previousSummary);
-        } catch (err) {
-          console.error(`${channel.name} / ${video.title}: summary generation failed — ${err instanceof Error ? err.message : err}`);
+        if (await checkBudget()) {
+          try {
+            // What this person said last time, so the summary can say what moved.
+            const previousSummary = await getLatestChannelSummary(db, channel.channelId, videoRowId);
+            summary = await generateSummary(transcript, previousSummary);
+          } catch (err) {
+            if (err instanceof BudgetReachedError) noteBudgetReached(err);
+            else console.error(`${channel.name} / ${video.title}: summary generation failed — ${err instanceof Error ? err.message : err}`);
+          }
         }
 
         await updateVideoTranscript(db, videoRowId, transcript, summary);
       }
 
+      // Transcript is saved by now; with the cap reached, leave the analysis for later.
+      if (!(await checkBudget())) continue;
+
       let mentions;
       try {
         mentions = await extractTickers(transcript, video.title);
       } catch (err) {
+        if (err instanceof BudgetReachedError) {
+          noteBudgetReached(err);
+          continue;
+        }
         const msg = `${channel.name} / ${video.title}: Claude extraction failed — ${err instanceof Error ? err.message : err}`;
         errors.push(msg);
         console.error(msg);
@@ -307,5 +341,9 @@ export async function runFetch(): Promise<FetchResult> {
     `about $${usage.estimatedCostUsd.toFixed(4)}${usage.partialCost ? '+ (some models unpriced)' : ''}`,
   );
 
-  return { success: true, timedOut, videosProcessed, tickersFound, errors, newAlerts, newVideos, skippedChannels, fetchSources, usage };
+  const budget = await getBudgetStatus();
+  return {
+    success: true, timedOut, videosProcessed, tickersFound, errors, newAlerts, newVideos,
+    skippedChannels, fetchSources, usage, budgetReached, budget,
+  };
 }

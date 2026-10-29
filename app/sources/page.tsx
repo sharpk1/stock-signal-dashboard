@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import type { SourceStatus } from '@/app/api/sources/route';
+import type { BudgetStatus } from '@/app/api/budget/route';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
 
 // Stored timestamps are SQLite's `datetime('now')` — "YYYY-MM-DD HH:MM:SS" in
@@ -41,8 +42,46 @@ function StatusDot({ status }: { status: SourceStatus }) {
   return <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${color}`} title={label} />;
 }
 
+function formatMonth(month: string): string {
+  const date = new Date(`${month}-01T00:00:00Z`);
+  return Number.isNaN(date.getTime())
+    ? month
+    : date.toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** This month's estimated Claude spend against the cap, as a bar. */
+function BudgetCard({ budget }: { budget: BudgetStatus }) {
+  const share = budget.capUsd > 0 ? budget.spentUsd / budget.capUsd : 1;
+  const percent = Math.min(Math.round(share * 100), 100);
+  const [bar, note] =
+    budget.reached ? ['bg-red-500', 'Cap reached — AI summaries, ticker extraction and chat are paused until next month. New items are still saved.']
+    : share >= 0.8 ? ['bg-amber-500', 'Past 80% of the cap.']
+    : ['bg-emerald-500', null];
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl px-5 py-4 mb-6">
+      <div className="flex items-baseline justify-between gap-4">
+        <div className="text-sm font-semibold text-gray-800">AI spend · {formatMonth(budget.month)}</div>
+        <div className="text-sm text-gray-800">
+          <span className="font-semibold">${budget.spentUsd.toFixed(2)}</span>
+          <span className="text-gray-400"> of ${budget.capUsd.toFixed(2)} cap</span>
+        </div>
+      </div>
+      <div className="mt-3 h-2 rounded-full bg-gray-100 overflow-hidden">
+        <div className={`h-full ${bar}`} style={{ width: `${percent}%` }} />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-4 text-xs text-gray-500">
+        <span className={budget.reached ? 'text-red-700' : share >= 0.8 ? 'text-amber-700' : ''}>
+          {note ?? `${percent}% used · ${budget.calls} Claude call${budget.calls === 1 ? '' : 's'} this month`}
+        </span>
+        <span className="text-gray-400 shrink-0">Estimated from this app&apos;s own calls · resets monthly (UTC)</span>
+      </div>
+    </div>
+  );
+}
+
 export default function SourcesPage() {
   const [sources, setSources] = useState<SourceStatus[] | null>(null);
+  const [budget, setBudget] = useState<BudgetStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +89,11 @@ export default function SourcesPage() {
       .then(res => res.json())
       .then((data: SourceStatus[]) => { if (!cancelled) setSources(data); })
       .catch(() => { if (!cancelled) setSources([]); });
+    // Separate from the sources list, so a failure here never blanks it.
+    fetch('/api/budget')
+      .then(res => (res.ok ? res.json() : null))
+      .then((data: BudgetStatus | null) => { if (!cancelled) setBudget(data); })
+      .catch(() => { /* leave the card out */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -70,6 +114,8 @@ export default function SourcesPage() {
         <p className="text-sm text-gray-500 mb-6">
           Every source, when it last pulled successfully, and anything that has gone wrong since.
         </p>
+
+        {budget && <BudgetCard budget={budget} />}
 
         {sources === null ? (
           <div className="flex items-center justify-center py-24">

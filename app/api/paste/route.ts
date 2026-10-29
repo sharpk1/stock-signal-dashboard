@@ -4,6 +4,7 @@ import { getDb, saveChannel, savePastedItem, updateVideoTranscript, saveMention,
 import { CHANNELS } from '@/lib/channels';
 import { extractTickers, generateSummary } from '@/lib/extract';
 import { parsePaste, pasteItemId, PASTE_TYPE_LABELS, type PasteType } from '@/lib/paste';
+import { BudgetReachedError } from '@/lib/budget';
 
 // Summarising a member livestream means several Claude calls, so give it the
 // same headroom as the cron route rather than the default.
@@ -88,6 +89,14 @@ export async function POST(request: Request) {
     tickers = mentions.map(m => m.ticker.toUpperCase());
   } catch (err) {
     console.error(`[paste] extraction failed for ${itemId}:`, err instanceof Error ? err.message : err);
+    if (err instanceof BudgetReachedError) {
+      // The text is saved either way; once the budget allows, pasting it again
+      // runs the analysis.
+      return NextResponse.json(
+        { error: `Saved the text, but it was not analysed. ${err.message} Paste it again then to analyse it.` },
+        { status: 429 },
+      );
+    }
     return NextResponse.json(
       { error: 'Saved the text, but the AI analysis failed. Paste it again to retry — it will not be charged twice.' },
       { status: 502 },

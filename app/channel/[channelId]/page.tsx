@@ -154,11 +154,13 @@ export default function ChannelPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: urlInput.trim(), channelId }),
       });
-      const data = await res.json() as { error?: string };
+      const data = await res.json() as { error?: string; warning?: string | null };
       if (!res.ok) {
         setUrlError(data.error ?? 'Failed to add video');
       } else {
         setUrlInput('');
+        // Added, but not analysed: the monthly AI budget is used up.
+        if (data.warning) setUrlError(data.warning);
         await loadVideos();
       }
     } finally {

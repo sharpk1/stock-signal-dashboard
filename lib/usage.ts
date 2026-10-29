@@ -73,6 +73,21 @@ export function estimateCostUsd(model: string, inputTokens: number, outputTokens
   return (inputTokens / 1_000_000) * price.input + (outputTokens / 1_000_000) * price.output;
 }
 
+/**
+ * What a call counts for against the monthly cap. A model missing from the
+ * price table is charged at the dearest rate in it, so a new model id can't
+ * slip past the cap at $0.
+ */
+export function chargeableCostUsd(model: string, inputTokens: number, outputTokens: number): number {
+  const known = estimateCostUsd(model, inputTokens, outputTokens);
+  if (known !== null) return known;
+  const dearest = Object.values(PRICES_PER_MTOK).reduce(
+    (max, p) => ({ input: Math.max(max.input, p.input), output: Math.max(max.output, p.output) }),
+    { input: 0, output: 0 },
+  );
+  return (inputTokens / 1_000_000) * dearest.input + (outputTokens / 1_000_000) * dearest.output;
+}
+
 export function getUsage(): RunUsage {
   const byModel: ModelUsage[] = [...tally.entries()]
     .map(([model, counter]) => ({

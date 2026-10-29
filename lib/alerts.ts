@@ -1,5 +1,6 @@
 import type { SourceAlertState } from '@/lib/db';
 import { COOKIE_EXPIRED_MARKER, COOKIE_AGEING_MARKER } from '@/lib/substack';
+import type { BudgetAlert } from '@/lib/budget';
 
 /**
  * Anthropic reports an exhausted balance as a request error rather than
@@ -47,6 +48,8 @@ export interface AlertDecision {
   newlyFailing: SourceAlertState[];
   creditProblem: string | null;
   cookieProblem: string | null;
+  /** The month's spend has crossed 80% or 100% of the cap for the first time. */
+  budgetAlert: BudgetAlert | null;
   shouldSend: boolean;
 }
 
@@ -55,7 +58,11 @@ export interface AlertDecision {
  * edge-triggered against the previous run so a persistent problem doesn't send
  * a fresh email every three hours.
  */
-export function decideAlerts(states: SourceAlertState[], runErrors: string[]): AlertDecision {
+export function decideAlerts(
+  states: SourceAlertState[],
+  runErrors: string[],
+  budgetAlert: BudgetAlert | null = null,
+): AlertDecision {
   const newlyFailing = selectNewlyFailing(states);
 
   const creditNow = detectCreditProblem([
@@ -76,7 +83,8 @@ export function decideAlerts(states: SourceAlertState[], runErrors: string[]): A
     newlyFailing,
     creditProblem,
     cookieProblem,
-    shouldSend: newlyFailing.length > 0 || creditProblem !== null || cookieProblem !== null,
+    budgetAlert,
+    shouldSend: newlyFailing.length > 0 || creditProblem !== null || cookieProblem !== null || budgetAlert !== null,
   };
 }
 
@@ -89,5 +97,7 @@ export function alertSubject(decision: AlertDecision): string {
   }
   if (decision.creditProblem) parts.push('AI credit running low');
   if (decision.cookieProblem) parts.push('Substack session needs refreshing');
+  if (decision.budgetAlert?.level === 100) parts.push('Monthly AI budget reached');
+  else if (decision.budgetAlert) parts.push('AI spend at 80% of the monthly budget');
   return `⚠️ ${parts.join(' · ')} — Stock Signals`;
 }

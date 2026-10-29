@@ -2,6 +2,7 @@ import type { Client } from '@libsql/client';
 import path from 'path';
 import { Channel } from '@/lib/channels';
 import { initDeliverables } from '@/lib/deliverables';
+import type { BudgetAlertLevel } from '@/lib/budget';
 
 export type Db = Client;
 
@@ -117,6 +118,30 @@ export async function initDb(db: Client): Promise<void> {
       question   TEXT NOT NULL,
       answer     TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- One row per Claude call, for the monthly cap (A1). month is "YYYY-MM"
+    -- in UTC, written by the app so the sum never depends on SQLite's clock.
+    CREATE TABLE IF NOT EXISTS ai_spend (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      month         TEXT NOT NULL,
+      purpose       TEXT NOT NULL,
+      model         TEXT NOT NULL,
+      input_tokens  INTEGER NOT NULL,
+      output_tokens INTEGER NOT NULL,
+      cost_usd      REAL NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_spend_month ON ai_spend (month);
+
+    -- Which budget emails a month has had, so the three-hourly cron sends
+    -- each one once.
+    CREATE TABLE IF NOT EXISTS budget_alerts (
+      month   TEXT NOT NULL,
+      level   INTEGER NOT NULL,
+      sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (month, level)
     );
   `);
 
@@ -577,6 +602,51 @@ export async function updateVideoTranscript(
     args: [transcript, summary, videoRowId],
   });
   if (result.rowsAffected === 0) throw new Error(`No video row found for id ${videoRowId}`);
+}
+
+export interface AiSpendRow {
+  month: string;
+  purpose: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
+export async function recordAiSpend(db: Client, row: AiSpendRow): Promise<void> {
+  await db.execute({
+    sql: `
+      INSERT INTO ai_spend (month, purpose, model, input_tokens, output_tokens, cost_usd)
+      VALUES (:month, :purpose, :model, :inputTokens, :outputTokens, :costUsd)
+    `,
+    args: { ...row },
+  });
+}
+
+/** Estimated spend and call count for one "YYYY-MM" month. */
+export async function getMonthSpend(db: Client, month: string): Promise<{ spentUsd: number; calls: number }> {
+  const row = (await db.execute({
+    sql: 'SELECT COALESCE(SUM(cost_usd), 0) AS spent, COUNT(*) AS calls FROM ai_spend WHERE month = ?',
+    args: [month],
+  })).rows[0];
+  return { spentUsd: Number(row?.spent ?? 0), calls: Number(row?.calls ?? 0) };
+}
+
+export async function getBudgetAlertsSent(db: Client, month: string): Promise<Set<BudgetAlertLevel>> {
+  const rows = (await db.execute({
+    sql: 'SELECT level FROM budget_alerts WHERE month = ?',
+    args: [month],
+  })).rows;
+  return new Set(rows.map(r => Number(r.level) as BudgetAlertLevel));
+}
+
+export async function markBudgetAlertsSent(db: Client, month: string, levels: BudgetAlertLevel[]): Promise<void> {
+  for (const level of levels) {
+    await db.execute({
+      sql: 'INSERT OR IGNORE INTO budget_alerts (month, level) VALUES (?, ?)',
+      args: [month, level],
+    });
+  }
 }
 
 export async function saveMemory(

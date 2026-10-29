@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb, saveVideo, saveMention, updateVideoTranscript } from '@/lib/db';
 import { fetchTranscript } from '@/lib/youtube';
 import { extractTickers, generateSummary } from '@/lib/extract';
+import { BudgetReachedError } from '@/lib/budget';
 
 export const maxDuration = 120;
 
@@ -64,9 +65,15 @@ export async function POST(request: Request) {
     );
   }
 
+  // Analysis failures don't stop the video being added; a capped month is the
+  // one worth telling the user about.
+  let budgetWarning: string | null = null;
+  const noteBudget = (err: unknown) => {
+    if (err instanceof BudgetReachedError) budgetWarning = err.message;
+  };
   const [summary, mentions] = await Promise.all([
-    generateSummary(transcript).catch(() => ''),
-    extractTickers(transcript, title).catch(() => []),
+    generateSummary(transcript).catch(err => { noteBudget(err); return ''; }),
+    extractTickers(transcript, title).catch(err => { noteBudget(err); return []; }),
   ]);
 
   const videoRowId = Number((await db.execute({
@@ -95,5 +102,5 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ ok: true, title, tickersFound: mentions.length });
+  return NextResponse.json({ ok: true, title, tickersFound: mentions.length, warning: budgetWarning });
 }

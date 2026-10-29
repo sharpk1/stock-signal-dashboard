@@ -4,7 +4,8 @@ import { initDb, saveChannel, saveVideo, saveMention, getLeaderboard, getMention
          updateVideoTranscript, saveMemory, getMemories, saveConversation, getRecentConversations,
          getDisabledChannelIds, setChannelEnabled,
          recordSourceRun, getSourceStatuses, getSourceAlertStates, savePastedItem,
-         getVideosMissingSummary, updateVideoSummary } from '@/lib/db';
+         getVideosMissingSummary, updateVideoSummary,
+         recordAiSpend, getMonthSpend, getBudgetAlertsSent, markBudgetAlertsSent } from '@/lib/db';
 
 async function makeTestDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -410,5 +411,34 @@ describe('getVideosMissingSummary', () => {
     const id = await seed(db, 'v1', daysAgo(1), 'text', '');
     await updateVideoSummary(db, id, 'filled');
     expect(await getVideosMissingSummary(db, 2)).toEqual([]);
+  });
+});
+
+describe('ai spend', () => {
+  const call = (month: string, costUsd: number) => ({
+    month, purpose: 'summary', model: 'claude-sonnet-5-5', inputTokens: 1000, outputTokens: 100, costUsd,
+  });
+
+  it('sums only the requested month', async () => {
+    const db = await makeTestDb();
+    await recordAiSpend(db, call('2026-09', 30));
+    await recordAiSpend(db, call('2026-10', 1.25));
+    await recordAiSpend(db, call('2026-10', 0.5));
+    expect(await getMonthSpend(db, '2026-10')).toEqual({ spentUsd: 1.75, calls: 2 });
+  });
+
+  it('is zero for a month with no calls', async () => {
+    const db = await makeTestDb();
+    expect(await getMonthSpend(db, '2026-11')).toEqual({ spentUsd: 0, calls: 0 });
+  });
+});
+
+describe('budget alerts sent', () => {
+  it('remembers which levels a month has had, without duplicates', async () => {
+    const db = await makeTestDb();
+    await markBudgetAlertsSent(db, '2026-10', [80]);
+    await markBudgetAlertsSent(db, '2026-10', [80, 100]);
+    expect(await getBudgetAlertsSent(db, '2026-10')).toEqual(new Set([80, 100]));
+    expect(await getBudgetAlertsSent(db, '2026-11')).toEqual(new Set());
   });
 });

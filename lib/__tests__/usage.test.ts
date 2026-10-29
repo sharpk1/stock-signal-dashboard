@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { resetUsage, recordUsage, getUsage, priceFor, estimateCostUsd } from '@/lib/usage';
+import { resetUsage, recordUsage, getUsage, priceFor, estimateCostUsd, chargeableCostUsd } from '@/lib/usage';
 
 beforeEach(() => resetUsage());
 
@@ -63,5 +63,16 @@ describe('run usage tally', () => {
     recordUsage('claude-sonnet-5-5', 1000, 100);
     resetUsage();
     expect(getUsage().calls).toBe(0);
+  });
+});
+
+describe('chargeableCostUsd', () => {
+  it('matches the estimate for a priced model', () => {
+    expect(chargeableCostUsd('claude-sonnet-5-5', 1_000_000, 1_000_000)).toBeCloseTo(12, 6);
+  });
+
+  it('charges an unpriced model at the dearest known rate, so it still counts toward the cap', () => {
+    // Opus 5.5 is the dearest in the table: $4 in, $20 out.
+    expect(chargeableCostUsd('some-future-model', 1_000_000, 1_000_000)).toBeCloseTo(24, 6);
   });
 });
