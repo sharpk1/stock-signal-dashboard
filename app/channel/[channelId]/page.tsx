@@ -8,6 +8,7 @@ import remarkGfm from 'remark-gfm';
 import { CHANNELS } from '@/lib/channels';
 import { ETORO_SNAPSHOTS, type EtoroSnapshot } from '@/lib/etoro';
 import { PASTE_TYPE_LABELS, isPasteType } from '@/lib/paste';
+import { TranscriptPanel } from '@/app/components/TranscriptPanel';
 import type { ChannelVideo } from '@/app/api/videos/route';
 import type { ChatSource } from '@/app/api/chat/route';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
@@ -355,6 +356,7 @@ export default function ChannelPage() {
                           </div>
                         </div>
                       )}
+                      <TranscriptPanel videoId={video.video_id} />
                     </div>
                   )}
                 </div>
