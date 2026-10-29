@@ -15,6 +15,8 @@ import type { ChatSource } from '@/app/api/chat/route';
 import { PASTE_TYPES, PASTE_TYPE_LABELS, todayIso, MIN_PASTE_CHARS, type PasteType } from '@/lib/paste';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
 import { TranscriptPanel } from '@/app/components/TranscriptPanel';
+import { filterItems, availableSources, isFilterActive, DIRECTIONS, DIRECTION_LABELS,
+         EMPTY_FILTER, type ItemFilter, type Direction } from '@/lib/filters';
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
   const styles: Record<string, string> = {
@@ -145,6 +147,7 @@ export default function Page() {
   const [digestLoading, setDigestLoading] = useState(false);
   const [digestDays, setDigestDays] = useState<3 | 7 | 14>(7);
   const [digestExpanded, setDigestExpanded] = useState<string | null>(null);
+  const [digestFilter, setDigestFilter] = useState<ItemFilter>(EMPTY_FILTER);
   const [leaderboardDays, setLeaderboardDays] = useState<7 | 14 | 30>(7);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteType, setPasteType] = useState<PasteType>('alpha-report');
@@ -284,6 +287,9 @@ export default function Page() {
       setFetching(false);
     }
   }
+
+  const digestSources = availableSources(digest);
+  const visibleDigest = filterItems(digest, digestFilter);
 
   function topSentiment(entry: LeaderboardEntry): string {
     if (!entry.details.length) return 'neutral';
@@ -447,8 +453,65 @@ export default function Page() {
                   {d}d
                 </button>
               ))}
-              {!digestLoading && <span className="text-xs text-gray-400 ml-2">{digest.length} video{digest.length === 1 ? '' : 's'}</span>}
+              {!digestLoading && (
+                <span className="text-xs text-gray-400 ml-2">
+                  {isFilterActive(digestFilter)
+                    ? `${visibleDigest.length} of ${digest.length}`
+                    : `${digest.length} video${digest.length === 1 ? '' : 's'}`}
+                </span>
+              )}
             </div>
+
+            {/* Filters and search (B9) */}
+            {!digestLoading && digest.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <select
+                  value={digestFilter.source}
+                  onChange={e => setDigestFilter(f => ({ ...f, source: e.target.value }))}
+                  aria-label="Filter by source"
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All sources</option>
+                  {digestSources.map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+
+                <div className="flex items-center gap-1">
+                  {DIRECTIONS.map(d => (
+                    <button
+                      key={d}
+                      onClick={() => setDigestFilter(f => ({ ...f, direction: d as Direction }))}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        digestFilter.direction === d
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
+                      }`}
+                    >
+                      {DIRECTION_LABELS[d]}
+                    </button>
+                  ))}
+                </div>
+
+                <input
+                  type="search"
+                  value={digestFilter.query}
+                  onChange={e => setDigestFilter(f => ({ ...f, query: e.target.value }))}
+                  placeholder="Search ticker or keyword…"
+                  aria-label="Search by ticker or keyword"
+                  className="flex-1 min-w-[12rem] rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+
+                {isFilterActive(digestFilter) && (
+                  <button
+                    onClick={() => setDigestFilter(EMPTY_FILTER)}
+                    className="px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-blue-600 transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
 
             {digestLoading ? (
               <div className="flex flex-col items-center justify-center py-24 gap-3">
@@ -468,7 +531,13 @@ export default function Page() {
               </div>
             ) : (
               <div className="space-y-2">
-                {digest.map(v => {
+                {visibleDigest.length === 0 ? (
+                  <div className="rounded-xl border border-gray-200 bg-white px-5 py-10 text-center">
+                    <p className="text-gray-800 font-medium">Nothing matches those filters</p>
+                    <p className="text-gray-500 text-sm mt-1">Try a different source, direction or search term.</p>
+                  </div>
+                ) : null}
+                {visibleDigest.map(v => {
                   const isOpen = digestExpanded === v.video_id;
                   return (
                     <div key={v.video_id} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
