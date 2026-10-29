@@ -1,4 +1,5 @@
 import type { SourceAlertState } from '@/lib/db';
+import { COOKIE_EXPIRED_MARKER, COOKIE_AGEING_MARKER } from '@/lib/substack';
 
 /**
  * Anthropic reports an exhausted balance as a request error rather than
@@ -31,9 +32,21 @@ export function selectNewlyFailing(states: SourceAlertState[]): SourceAlertState
   return states.filter(state => state.latestOk === false && state.previousOk !== false);
 }
 
+/** A Substack session that has expired, or is old enough to be about to. */
+export function detectCookieProblem(messages: Array<string | null | undefined>): string | null {
+  for (const message of messages) {
+    if (!message) continue;
+    if (message.includes(COOKIE_EXPIRED_MARKER) || message.includes(COOKIE_AGEING_MARKER)) {
+      return message;
+    }
+  }
+  return null;
+}
+
 export interface AlertDecision {
   newlyFailing: SourceAlertState[];
   creditProblem: string | null;
+  cookieProblem: string | null;
   shouldSend: boolean;
 }
 
@@ -52,10 +65,18 @@ export function decideAlerts(states: SourceAlertState[], runErrors: string[]): A
   const creditBefore = detectCreditProblem(states.map(state => state.previousError));
   const creditProblem = creditNow && !creditBefore ? creditNow : null;
 
+  const cookieNow = detectCookieProblem([
+    ...runErrors,
+    ...states.map(state => state.latestError),
+  ]);
+  const cookieBefore = detectCookieProblem(states.map(state => state.previousError));
+  const cookieProblem = cookieNow && !cookieBefore ? cookieNow : null;
+
   return {
     newlyFailing,
     creditProblem,
-    shouldSend: newlyFailing.length > 0 || creditProblem !== null,
+    cookieProblem,
+    shouldSend: newlyFailing.length > 0 || creditProblem !== null || cookieProblem !== null,
   };
 }
 
@@ -67,5 +88,6 @@ export function alertSubject(decision: AlertDecision): string {
     parts.push(`${decision.newlyFailing.length} sources stopped working`);
   }
   if (decision.creditProblem) parts.push('AI credit running low');
+  if (decision.cookieProblem) parts.push('Substack session needs refreshing');
   return `⚠️ ${parts.join(' · ')} — Stock Signals`;
 }

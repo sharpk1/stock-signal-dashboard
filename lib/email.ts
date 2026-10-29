@@ -96,11 +96,19 @@ function buildAlertHtml(decision: AlertDecision): string {
       <div style="font-size:12px;color:#a16207;margin-top:6px">Summaries and ticker extraction stop until this is topped up.</div>
     </div>` : '';
 
+  const cookieBlock = decision.cookieProblem ? `
+    <div style="margin-bottom:22px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px">
+      <div style="font:600 12px system-ui;color:#92400e;text-transform:uppercase;letter-spacing:.05em">Substack session</div>
+      <div style="font-size:13px;color:#92400e;margin-top:4px;word-break:break-word">${escapeHtml(decision.cookieProblem)}</div>
+      <div style="font-size:12px;color:#a16207;margin-top:6px">Robert Reynolds' posts stop coming through once the session cookie expires.</div>
+    </div>` : '';
+
   return `<div style="max-width:560px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;color:#0f172a">
     <h2 style="font-size:18px;margin:0 0 4px">⚠️ Stock Signals needs attention</h2>
     <p style="color:#64748b;font-size:13px;margin:0 0 20px">Picked up on the last scheduled run.</p>
     ${sourcesBlock}
     ${creditBlock}
+    ${cookieBlock}
     <a href="${APP_URL}/sources" style="display:inline-block;background:#2563eb;color:#fff;font-size:14px;font-weight:600;text-decoration:none;padding:9px 16px;border-radius:8px;margin-top:8px">See every source →</a>
   </div>`;
 }
