@@ -1,0 +1,43 @@
+name: Backfill summaries
+
+# One-off repair: fills in summaries for items saved while they came back empty.
+# Run it by hand from the Actions tab; re-run it if the result says items remain.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'How many days back to fill in (1-7)'
+        required: false
+        default: '2'
+
+permissions: {}
+
+# Never alongside a fetch: both write summaries for the same items.
+concurrency:
+  group: fetch-signals
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Backfill missing summaries
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          DAYS: ${{ inputs.days }}
+        run: |
+          set -euo pipefail
+          status=$(curl -sS "${APP_URL%/}/api/backfill-summaries?days=${DAYS}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            --max-time 600 \
+            -o response.json \
+            -w '%{http_code}')
+          echo "HTTP $status"
+          cat response.json || true
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::/api/backfill-summaries returned HTTP $status"
+            exit 1
+          fi
