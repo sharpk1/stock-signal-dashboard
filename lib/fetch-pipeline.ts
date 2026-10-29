@@ -1,7 +1,8 @@
 import { CHANNELS, Channel } from '@/lib/channels';
 import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert, bumpTranscriptAttempts, getDisabledChannelIds, recordSourceRun, getLatestChannelSummary } from '@/lib/db';
 import { fetchRecentVideos, fetchTranscript } from '@/lib/youtube';
-import { fetchSubstackPosts, extractSubstackContent, SubstackPost } from '@/lib/substack';
+import { fetchSubstackPosts, extractSubstackContent, SubstackPost,
+         cookieAgeWarning, emptyHarvestWarning, describeUnusablePost } from '@/lib/substack';
 import { extractTickers, generateSummary } from '@/lib/extract';
 import { resetUsage, getUsage, type RunUsage } from '@/lib/usage';
 
@@ -95,10 +96,24 @@ export async function runFetch(): Promise<FetchResult> {
       });
     };
 
+    const warn = (warning: string | null) => {
+      if (!warning) return;
+      const msg = `${channel.name}: ${warning}`;
+      errors.push(msg);
+      console.warn(msg);
+    };
+
+    // How old the cookie is is a calendar question, not a network one — check it
+    // before the pull, so an ageing session is still reported on a run where
+    // the pull itself fails.
+    if (channel.source === 'substack') warn(cookieAgeWarning());
+
     let videos: Array<SubstackPost | Awaited<ReturnType<typeof fetchRecentVideos>>[number]>;
     try {
       if (channel.source === 'substack') {
         videos = await fetchSubstackPosts(channel.substackHandle!);
+        // The pull worked; check whether it actually brought anything back.
+        warn(emptyHarvestWarning(videos as SubstackPost[]));
       } else {
         videos = await fetchRecentVideos(channel);
       }
@@ -183,8 +198,9 @@ export async function runFetch(): Promise<FetchResult> {
                 transcript = articleText;
               }
             } else {
-              if (!articleText) {
-                const msg = `${channel.name} / ${video.videoId}: empty body — skipping`;
+              const unusable = describeUnusablePost(post.bodyHtml);
+              if (unusable) {
+                const msg = `${channel.name} / ${video.videoId}: ${unusable} — skipping`;
                 errors.push(msg);
                 console.error(msg);
                 continue;
