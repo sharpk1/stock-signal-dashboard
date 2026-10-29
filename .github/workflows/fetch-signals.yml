@@ -1,0 +1,72 @@
+name: Fetch signals
+
+# Vercel's Hobby plan allows a single cron run per day, which is not often
+# enough for a new video to show up the day it goes out. This runs the same
+# /api/cron endpoint on a three-hour schedule instead. The Vercel cron in
+# vercel.json is left in place as a once-daily backstop.
+on:
+  schedule:
+    # Every three hours, at minute 17 rather than 0: scheduled jobs queue
+    # heavily on the hour, and a delayed run eats into the freshness this
+    # workflow exists to provide.
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+
+# Nothing here needs a repository token.
+permissions: {}
+
+# One fetch at a time — a run can take five minutes, and two overlapping runs
+# would race each other over the same videos.
+concurrency:
+  group: fetch-signals
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Trigger the fetch pipeline
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${APP_URL:-}" ]; then
+            echo "::error::APP_URL secret is not set (e.g. https://your-app.vercel.app)"
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::CRON_SECRET secret is not set; it must match CRON_SECRET in the Vercel project"
+            exit 1
+          fi
+
+          # The endpoint runs the whole pipeline, which budgets 240s and is
+          # capped at 300s by the route's maxDuration, so allow well past that
+          # before giving up on it.
+          status=$(curl -sS "${APP_URL%/}/api/cron" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            --max-time 600 \
+            -o response.json \
+            -w '%{http_code}')
+
+          echo "HTTP $status"
+          cat response.json || true
+          echo
+
+          if [ "$status" != "200" ]; then
+            echo "::error::/api/cron returned HTTP $status"
+            exit 1
+          fi
+
+          {
+            echo "### Fetch result"
+            jq -r '
+              "- videos processed: \(.videosProcessed)",
+              "- tickers found: \(.tickersFound)",
+              "- new videos: \(.newVideos | length)",
+              "- channels switched off: \((.skippedChannels // []) | if length == 0 then "none" else join(", ") end)",
+              "- errors: \(.errors | length)"
+            ' response.json
+          } >> "$GITHUB_STEP_SUMMARY" || true
