@@ -6,9 +6,74 @@ import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CHANNELS } from '@/lib/channels';
+import { ETORO_SNAPSHOTS, type EtoroSnapshot } from '@/lib/etoro';
 import type { ChannelVideo } from '@/app/api/videos/route';
 import type { ChatSource } from '@/app/api/chat/route';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
+
+function formatAsOf(asOf: string): string {
+  const date = new Date(`${asOf}T00:00:00Z`);
+  return Number.isNaN(date.getTime())
+    ? asOf
+    : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+/**
+ * What this person actually owns, ranked the way eToro ranks it — by the share
+ * of the portfolio put in at cost. Hand-maintained in lib/etoro.ts: eToro
+ * publishes no portfolio API, so a refresh is an edit to that file.
+ */
+function EtoroHoldings({ snapshot }: { snapshot: EtoroSnapshot }) {
+  const positions = [...snapshot.positions].sort((a, b) => b.investedPct - a.investedPct);
+  const totalInvested = positions.reduce((sum, p) => sum + p.investedPct, 0);
+  const widest = positions[0]?.investedPct || 1;
+
+  return (
+    <div className="mb-6 bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-100 flex items-baseline justify-between gap-3 flex-wrap">
+        <div className="flex items-baseline gap-2">
+          <span className="font-semibold text-sm text-gray-800">eToro holdings</span>
+          <span className="text-xs text-gray-400">{positions.length} positions · {totalInvested.toFixed(1)}% invested</span>
+        </div>
+        <a
+          href={`https://www.etoro.com/people/${snapshot.etoroUser.toLowerCase()}/portfolio`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-violet-800 hover:underline"
+        >
+          Last updated {formatAsOf(snapshot.asOf)} →
+        </a>
+      </div>
+      <ul className="divide-y divide-gray-100">
+        {positions.map(position => (
+          <li key={position.ticker} className="px-5 py-2.5 flex items-center gap-3">
+            <span className="font-mono text-xs font-semibold text-gray-800 w-14 shrink-0">{position.ticker}</span>
+            <span className="text-sm text-gray-600 truncate flex-1 min-w-0">
+              {position.name}
+              {position.etoroSymbol && (
+                <span className="text-xs text-gray-400"> · {position.etoroSymbol}</span>
+              )}
+            </span>
+            <span className="hidden sm:block w-24 shrink-0" aria-hidden="true">
+              <span className="block h-1.5 rounded-full bg-violet-100">
+                <span
+                  className="block h-1.5 rounded-full bg-violet-500"
+                  style={{ width: `${Math.max(4, (position.investedPct / widest) * 100)}%` }}
+                />
+              </span>
+            </span>
+            <span className="text-sm font-semibold text-gray-800 w-14 text-right shrink-0">
+              {position.investedPct.toFixed(2)}%
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="px-5 py-2 text-[11px] text-gray-400 border-t border-gray-100">
+        Invested % is the share of the portfolio put in at cost, as eToro reports it.
+      </p>
+    </div>
+  );
+}
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
   const styles: Record<string, string> = {
@@ -26,6 +91,7 @@ function SentimentBadge({ sentiment }: { sentiment: string }) {
 export default function ChannelPage() {
   const { channelId } = useParams<{ channelId: string }>();
   const channel = CHANNELS.find(c => c.channelId === channelId);
+  const etoroSnapshot = ETORO_SNAPSHOTS.find(s => s.channelId === channelId);
 
   const [videos, setVideos] = useState<ChannelVideo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -156,6 +222,8 @@ export default function ChannelPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
+        {etoroSnapshot && <EtoroHoldings snapshot={etoroSnapshot} />}
+
         {/* URL drop-in */}
         <div className="mb-6 flex gap-2">
           <input
