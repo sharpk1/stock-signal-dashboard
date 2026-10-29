@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { runFetch } from '@/lib/fetch-pipeline';
 import { sendAlertEmail } from '@/lib/email';
-import { getDb, getSourceAlertStates } from '@/lib/db';
+import { getDb, getSourceAlertStates, getBudgetAlertsSent, markBudgetAlertsSent } from '@/lib/db';
 import { decideAlerts } from '@/lib/alerts';
+import { decideBudgetAlert, levelsCovered } from '@/lib/budget';
 
 export const maxDuration = 300;
 
@@ -25,8 +26,15 @@ export async function GET(request: Request) {
     let alerted = false;
     try {
       const db = await getDb();
-      const decision = decideAlerts(await getSourceAlertStates(db), result.errors);
+      // The 80% and 100% budget emails go out once a month each. Spend from
+      // chat between runs is in ai_spend too, so this catches it on the next run.
+      const { month, spentUsd, capUsd } = result.budget;
+      const budgetAlert = decideBudgetAlert(month, spentUsd, capUsd, await getBudgetAlertsSent(db, month));
+      const decision = decideAlerts(await getSourceAlertStates(db), result.errors, budgetAlert);
       alerted = await sendAlertEmail(decision);
+      // Only once it has actually gone: unconfigured email shouldn't use up
+      // the month's one alert.
+      if (alerted && budgetAlert) await markBudgetAlertsSent(db, month, levelsCovered(budgetAlert));
     } catch (err) {
       console.error('alert send failed:', err);
       result.errors.push(`alert send failed: ${err instanceof Error ? err.message : err}`);

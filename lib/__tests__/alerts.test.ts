@@ -158,3 +158,22 @@ describe('Substack session alerts', () => {
     expect(decision.shouldSend).toBe(false);
   });
 });
+
+describe('budget alerts', () => {
+  const budgetAlert = (level: 80 | 100) => ({ level, month: '2026-10', spentUsd: level === 100 ? 50 : 41, capUsd: 50 });
+
+  it('emails when spend crosses 80%, even with every source healthy', () => {
+    const decision = decideAlerts([state()], [], budgetAlert(80));
+    expect(decision.shouldSend).toBe(true);
+    expect(alertSubject(decision)).toContain('AI spend at 80% of the monthly budget');
+  });
+
+  it('names the cap being reached', () => {
+    const decision = decideAlerts([state()], [], budgetAlert(100));
+    expect(alertSubject(decision)).toContain('Monthly AI budget reached');
+  });
+
+  it('sends nothing when there is no budget alert to make', () => {
+    expect(decideAlerts([state()], [], null).shouldSend).toBe(false);
+  });
+});

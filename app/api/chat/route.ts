@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import { getDb, saveConversation } from '@/lib/db';
 import { chatModel } from '@/lib/models';
 import { responseText } from '@/lib/extract';
-import { recordUsage } from '@/lib/usage';
+import { callClaude, getBudgetStatus } from '@/lib/claude';
+import { BudgetReachedError } from '@/lib/budget';
 import { itemUrl } from '@/lib/item-url';
 
 export interface ChatSource {
@@ -15,7 +15,10 @@ export interface ChatSource {
   url: string;
 }
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+/** Sent as `answer` too, so the chat panel shows it in place of a reply. */
+function budgetResponse(err: BudgetReachedError) {
+  return NextResponse.json({ error: err.message, answer: err.message, sources: [] }, { status: 429 });
+}
 
 export async function POST(request: Request) {
   const body = await request.json() as { question?: string; channelName?: string };
@@ -23,6 +26,12 @@ export async function POST(request: Request) {
   const channelName = body.channelName?.trim();
   if (!question) {
     return NextResponse.json({ error: 'question is required' }, { status: 400 });
+  }
+
+  // Check before the context queries, so a capped month answers straight away.
+  const budget = await getBudgetStatus();
+  if (budget.reached) {
+    return budgetResponse(new BudgetReachedError(budget.spentUsd, budget.capUsd));
   }
 
   const db = await getDb();
@@ -92,19 +101,25 @@ export async function POST(request: Request) {
     : '';
 
   const model = chatModel();
-  const response = await anthropic.messages.create({
-    model,
-    max_tokens: 2048,
-    system: (channelName
-      ? `You are a research assistant for ${channelName}'s content only. Answer based solely on their videos. Always cite the video title and date. Do not reference other channels.`
-      : 'You are a stock research assistant. Answer questions based only on the data provided. Always cite the channel and video title. For questions about an analyst\'s thesis or reasoning, prefer the video summaries section over ticker mentions.') + citationRule,
-    messages: [{
-      role: 'user',
-      content: `Stock mention data from recent videos:\n\n${tickerContext}${summaryContext}\n\nQuestion: ${question}`,
-    }],
-  });
+  let response;
+  try {
+    response = await callClaude('chat', {
+      model,
+      max_tokens: 2048,
+      system: (channelName
+        ? `You are a research assistant for ${channelName}'s content only. Answer based solely on their videos. Always cite the video title and date. Do not reference other channels.`
+        : 'You are a stock research assistant. Answer questions based only on the data provided. Always cite the channel and video title. For questions about an analyst\'s thesis or reasoning, prefer the video summaries section over ticker mentions.') + citationRule,
+      messages: [{
+        role: 'user',
+        content: `Stock mention data from recent videos:\n\n${tickerContext}${summaryContext}\n\nQuestion: ${question}`,
+      }],
+    });
+  } catch (err) {
+    // Another request may have used up the last of the budget since the check above.
+    if (err instanceof BudgetReachedError) return budgetResponse(err);
+    throw err;
+  }
 
-  recordUsage(model, response.usage.input_tokens, response.usage.output_tokens);
   const answer = responseText(response) || 'No answer found.';
   await saveConversation(db, question, answer);
   // Return only what the answer actually cited, so the list under it is the

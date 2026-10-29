@@ -2,6 +2,7 @@ name: Backfill summaries
 
 # One-off repair: fills in summaries for items saved while they came back empty.
 # Run it by hand from the Actions tab; re-run it if the result says items remain.
+# It stops at the monthly AI cap (MONTHLY_AI_BUDGET_USD) like everything else.
 on:
   workflow_dispatch:
     inputs:

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getDb, getVideosMissingSummary, getLatestChannelSummary, updateVideoSummary } from '@/lib/db';
 import { generateSummary } from '@/lib/extract';
 import { resetUsage, getUsage } from '@/lib/usage';
+import { getBudgetStatus } from '@/lib/claude';
+import { BudgetReachedError } from '@/lib/budget';
 
 export const maxDuration = 300;
 
@@ -29,14 +31,25 @@ export async function GET(request: Request) {
 
   let filled = 0;
   const failed: string[] = [];
+  // Set when the monthly AI cap stops the run; what's left is in `remaining`.
+  let budgetError: string | null = null;
   for (const video of pending) {
     if (Date.now() - started > TIME_BUDGET_MS) break;
+    const budget = await getBudgetStatus();
+    if (budget.reached) {
+      budgetError = new BudgetReachedError(budget.spentUsd, budget.capUsd).message;
+      break;
+    }
     try {
       const previous = await getLatestChannelSummary(db, video.channelId, video.id);
       await updateVideoSummary(db, video.id, await generateSummary(video.transcript, previous));
       filled++;
       console.log(`Backfilled summary: ${video.title}`);
     } catch (err) {
+      if (err instanceof BudgetReachedError) {
+        budgetError = err.message;
+        break;
+      }
       const msg = `${video.title}: ${err instanceof Error ? err.message : err}`;
       failed.push(msg);
       console.error(`Backfill failed — ${msg}`);
@@ -51,5 +64,7 @@ export async function GET(request: Request) {
     failed,
     remaining: pending.length - filled - failed.length,
     estimatedCostUsd: usage.estimatedCostUsd,
+    budgetReached: budgetError !== null,
+    budgetError,
   });
 }

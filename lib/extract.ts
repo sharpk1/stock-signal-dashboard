@@ -1,8 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { summaryModel, extractModel } from '@/lib/models';
-import { recordUsage } from '@/lib/usage';
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+import { callClaude } from '@/lib/claude';
+import { BudgetReachedError } from '@/lib/budget';
 
 export interface TickerMention {
   ticker: string;
@@ -106,6 +105,9 @@ export async function extractTickers(
     try {
       perChunk.push(await extractTickersFromChunk(chunk, `${videoTitle}${part}`, sourceLabel));
     } catch (err) {
+      // Out of budget: the remaining chunks would be refused too, and a partial
+      // list saved now would mark the item done with tickers missing.
+      if (err instanceof BudgetReachedError) throw err;
       failures.push(err);
       console.error(
         `[extractTickers] part ${index + 1}/${chunks.length} failed:`,
@@ -130,7 +132,7 @@ async function extractTickersFromChunk(
   sourceLabel: string,
 ): Promise<TickerMention[]> {
   const model = extractModel();
-  const message = await client.messages.create({
+  const message = await callClaude('extraction', {
     model,
     max_tokens: 4096,
     system: `You are a stock research assistant. Extract every stock ticker the host is making a meaningful point about. Ignore casual market references. Resolve company names to tickers.
@@ -165,7 +167,6 @@ Return only the JSON array, no other text.`,
     ],
   });
 
-  recordUsage(model, message.usage.input_tokens, message.usage.output_tokens);
   return parseExtractionResponse(responseText(message));
 }
 
@@ -228,13 +229,12 @@ export async function generateSummary(
 
 async function summarizeChunk(transcript: string, system: string): Promise<string> {
   const model = summaryModel();
-  const message = await client.messages.create({
+  const message = await callClaude('summary', {
     model,
     max_tokens: 2048,
     system,
     messages: [{ role: 'user', content: transcript }],
   });
-  recordUsage(model, message.usage.input_tokens, message.usage.output_tokens);
   const text = responseText(message);
   // Fail loudly here: an empty summary saved quietly is what hid this for days.
   if (!text) throw new Error(`summary came back with no text (stop_reason: ${message.stop_reason})`);
