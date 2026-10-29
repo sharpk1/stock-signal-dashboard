@@ -86,15 +86,25 @@ export async function sendAlertEmail(decision: AlertDecision): Promise<boolean> 
 }
 
 /**
- * The daily summary. Goes to the same people as the failure alerts; returns
- * false rather than throwing when email isn't configured yet.
+ * Who gets the daily summary. Its own list, separate from the alerts, so
+ * failure alerts can be switched on without the summary going out too — leave
+ * DIGEST_EMAILS unset and no summary is sent.
+ */
+export function digestRecipients(): string[] {
+  const raw = process.env.DIGEST_EMAILS ?? '';
+  return [...new Set(raw.split(',').map(address => address.trim()).filter(Boolean))];
+}
+
+/**
+ * The daily summary, to DIGEST_EMAILS. Returns false rather than throwing when
+ * email isn't configured.
  */
 export async function sendDailyDigestEmail(content: DigestContent): Promise<boolean> {
   const token = process.env.POSTMARK_SERVER_TOKEN;
   const from = process.env.EMAIL_FROM;
-  const to = alertRecipients();
+  const to = digestRecipients();
   if (!token || !from || to.length === 0) {
-    console.warn('[digest] not sent — POSTMARK_SERVER_TOKEN / EMAIL_FROM / ALERT_EMAILS not set');
+    console.warn('[digest] not sent — POSTMARK_SERVER_TOKEN / EMAIL_FROM / DIGEST_EMAILS not set');
     return false;
   }
 
