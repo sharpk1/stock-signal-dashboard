@@ -3,7 +3,7 @@ import { createClient, type Client } from '@libsql/client';
 import { initDb, saveChannel, saveVideo, saveMention, getLeaderboard, getMentionDetails,
          updateVideoTranscript, saveMemory, getMemories, saveConversation, getRecentConversations,
          getDisabledChannelIds, setChannelEnabled,
-         recordSourceRun, getSourceStatuses } from '@/lib/db';
+         recordSourceRun, getSourceStatuses, getSourceAlertStates } from '@/lib/db';
 
 async function makeTestDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -309,5 +309,38 @@ describe('source run log', () => {
     expect(status.lastRunOk).toBe(true);
     expect(status.lastSuccessItems).toBe(0);
     expect(status.lastSuccessAt).not.toBeNull();
+  });
+});
+
+describe('getSourceAlertStates', () => {
+  const channel = { id: 1, channelId: 'UC123', handle: '@test', name: 'Test Channel', weight: 0.5 };
+
+  it('reports no runs for a source that has never run', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    const [state] = await getSourceAlertStates(db);
+    expect(state.latestOk).toBeNull();
+    expect(state.previousOk).toBeNull();
+  });
+
+  it('separates the latest run from the one before it', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    await recordSourceRun(db, { channelId: 'UC123', success: true, items: 2 });
+    await recordSourceRun(db, { channelId: 'UC123', success: false, items: 0, error: 'boom' });
+    const [state] = await getSourceAlertStates(db);
+    expect(state.latestOk).toBe(false);
+    expect(state.latestError).toBe('boom');
+    expect(state.previousOk).toBe(true);
+    expect(state.previousError).toBeNull();
+  });
+
+  it('leaves previous null when only one run exists', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    await recordSourceRun(db, { channelId: 'UC123', success: false, items: 0, error: 'first run failed' });
+    const [state] = await getSourceAlertStates(db);
+    expect(state.latestOk).toBe(false);
+    expect(state.previousOk).toBeNull();
   });
 });
