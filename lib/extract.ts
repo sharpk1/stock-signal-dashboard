@@ -77,7 +77,11 @@ export function mergeMentions(lists: TickerMention[][]): TickerMention[] {
   return [...byTicker.values()].sort((a, b) => b.conviction - a.conviction);
 }
 
-export async function extractTickers(transcript: string, videoTitle: string): Promise<TickerMention[]> {
+export async function extractTickers(
+  transcript: string,
+  videoTitle: string,
+  sourceLabel: string = 'Video title',
+): Promise<TickerMention[]> {
   const chunks = chunkTranscript(transcript);
   const perChunk: TickerMention[][] = [];
   const failures: unknown[] = [];
@@ -87,7 +91,7 @@ export async function extractTickers(transcript: string, videoTitle: string): Pr
     // opening of a chunk as the start of the show.
     const part = chunks.length > 1 ? ` (part ${index + 1} of ${chunks.length})` : '';
     try {
-      perChunk.push(await extractTickersFromChunk(chunk, `${videoTitle}${part}`));
+      perChunk.push(await extractTickersFromChunk(chunk, `${videoTitle}${part}`, sourceLabel));
     } catch (err) {
       failures.push(err);
       console.error(
@@ -107,7 +111,11 @@ export async function extractTickers(transcript: string, videoTitle: string): Pr
   return mergeMentions(perChunk);
 }
 
-async function extractTickersFromChunk(transcript: string, videoTitle: string): Promise<TickerMention[]> {
+async function extractTickersFromChunk(
+  transcript: string,
+  videoTitle: string,
+  sourceLabel: string,
+): Promise<TickerMention[]> {
   const model = extractModel();
   const message = await client.messages.create({
     model,
@@ -139,7 +147,7 @@ Return only the JSON array, no other text.`,
     messages: [
       {
         role: 'user',
-        content: `Video title: ${videoTitle}\n\nTranscript:\n${transcript}`,
+        content: `${sourceLabel}: ${videoTitle}\n\nContent:\n${transcript}`,
       },
     ],
   });
