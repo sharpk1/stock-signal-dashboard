@@ -32,3 +32,36 @@ describe('eToro snapshots', () => {
     expect(index.get('UCnMn36GT_H0X-w5_ckLtlgQ|ADBE')).toBeUndefined();
   });
 });
+
+describe('holdings as the page shows them', () => {
+  const snapshot = ETORO_SNAPSHOTS.find(s => s.channelId === 'thepopularinvestor')!;
+
+  it('has a snapshot for Robert Reynolds to display', () => {
+    expect(snapshot).toBeDefined();
+    expect(snapshot.positions.length).toBeGreaterThan(0);
+  });
+
+  it('carries an invested % for every position, which is what it ranks by', () => {
+    for (const position of snapshot.positions) {
+      expect(typeof position.investedPct).toBe('number');
+      expect(position.investedPct).toBeGreaterThan(0);
+    }
+  });
+
+  it('ranks by invested %, heaviest first', () => {
+    const ranked = [...snapshot.positions].sort((a, b) => b.investedPct - a.investedPct);
+    expect(ranked[0].ticker).toBe('CCOI');
+    expect(ranked[0].investedPct).toBe(8.11);
+    for (let i = 1; i < ranked.length; i++) {
+      expect(ranked[i - 1].investedPct).toBeGreaterThanOrEqual(ranked[i].investedPct);
+    }
+  });
+
+  it('carries the date it was last updated', () => {
+    expect(snapshot.asOf).toBe('2026-09-29');
+  });
+
+  it('names the eToro account the holdings were copied from', () => {
+    expect(snapshot.etoroUser.toLowerCase()).toBe('robertmerc');
+  });
+});
