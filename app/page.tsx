@@ -279,6 +279,12 @@ export default function Page() {
             {lastFetched && (
               <span className="text-xs text-gray-400 hidden sm:block">· Updated {lastFetched}</span>
             )}
+            <Link
+              href="/sources"
+              className="text-xs text-gray-400 hover:text-blue-600 transition-colors hidden sm:block"
+            >
+              · Sources
+            </Link>
           </div>
           <div className="flex items-center gap-2">
             <button

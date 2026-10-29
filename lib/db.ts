@@ -82,6 +82,17 @@ export async function initDb(db: Client): Promise<void> {
   }
 
   await db.executeMultiple(`
+    CREATE TABLE IF NOT EXISTS source_runs (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      channel_id TEXT NOT NULL,
+      ran_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      success    INTEGER NOT NULL,
+      items      INTEGER NOT NULL DEFAULT 0,
+      error      TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_source_runs_channel ON source_runs (channel_id, ran_at DESC);
+
     CREATE TABLE IF NOT EXISTS convergence_alerts (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       ticker     TEXT NOT NULL,
@@ -154,6 +165,88 @@ export async function setChannelEnabled(
   if (result.rowsAffected === 0) {
     throw new Error(`unknown channel: ${channelId}`);
   }
+}
+
+export interface SourceRun {
+  channelId: string;
+  success: boolean;
+  items: number;
+  error?: string | null;
+}
+
+export interface SourceStatus {
+  channelId: string;
+  name: string;
+  handle: string;
+  lastSuccessAt: string | null;
+  lastSuccessItems: number | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  lastRunAt: string | null;
+  lastRunOk: boolean | null;
+}
+
+/** One row per source per run: did the pull work, how much did it bring back. */
+export async function recordSourceRun(db: Client, run: SourceRun): Promise<void> {
+  await db.execute({
+    sql: `
+      INSERT INTO source_runs (channel_id, success, items, error)
+      VALUES (:channelId, :success, :items, :error)
+    `,
+    args: {
+      channelId: run.channelId,
+      success: run.success ? 1 : 0,
+      items: run.items,
+      error: run.error ?? null,
+    },
+  });
+}
+
+/**
+ * Last successful pull and last error per source. The two are looked up
+ * independently on purpose: a source that failed an hour ago should still show
+ * when it last worked, and one working now should still show what went wrong
+ * last time.
+ */
+export async function getSourceStatuses(db: Client): Promise<SourceStatus[]> {
+  const rows = (await db.execute(`
+    SELECT
+      c.channel_id AS channelId,
+      c.name       AS name,
+      c.handle     AS handle,
+      (SELECT r.ran_at FROM source_runs r
+        WHERE r.channel_id = c.channel_id AND r.success = 1
+        ORDER BY r.ran_at DESC, r.id DESC LIMIT 1) AS lastSuccessAt,
+      (SELECT r.items FROM source_runs r
+        WHERE r.channel_id = c.channel_id AND r.success = 1
+        ORDER BY r.ran_at DESC, r.id DESC LIMIT 1) AS lastSuccessItems,
+      (SELECT r.ran_at FROM source_runs r
+        WHERE r.channel_id = c.channel_id AND r.error IS NOT NULL
+        ORDER BY r.ran_at DESC, r.id DESC LIMIT 1) AS lastErrorAt,
+      (SELECT r.error FROM source_runs r
+        WHERE r.channel_id = c.channel_id AND r.error IS NOT NULL
+        ORDER BY r.ran_at DESC, r.id DESC LIMIT 1) AS lastError,
+      (SELECT r.ran_at FROM source_runs r
+        WHERE r.channel_id = c.channel_id
+        ORDER BY r.ran_at DESC, r.id DESC LIMIT 1) AS lastRunAt,
+      (SELECT r.success FROM source_runs r
+        WHERE r.channel_id = c.channel_id
+        ORDER BY r.ran_at DESC, r.id DESC LIMIT 1) AS lastRunOk
+    FROM channels c
+    ORDER BY c.id
+  `)).rows as unknown as Record<string, string | number | null>[];
+
+  return rows.map(r => ({
+    channelId: String(r.channelId),
+    name: String(r.name),
+    handle: String(r.handle),
+    lastSuccessAt: r.lastSuccessAt === null ? null : String(r.lastSuccessAt),
+    lastSuccessItems: r.lastSuccessItems === null ? null : Number(r.lastSuccessItems),
+    lastErrorAt: r.lastErrorAt === null ? null : String(r.lastErrorAt),
+    lastError: r.lastError === null ? null : String(r.lastError),
+    lastRunAt: r.lastRunAt === null ? null : String(r.lastRunAt),
+    lastRunOk: r.lastRunOk === null ? null : Boolean(Number(r.lastRunOk)),
+  }));
 }
 
 export async function saveVideo(

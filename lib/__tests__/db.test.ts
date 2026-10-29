@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { initDb, saveChannel, saveVideo, saveMention, getLeaderboard, getMentionDetails,
          updateVideoTranscript, saveMemory, getMemories, saveConversation, getRecentConversations,
-         getDisabledChannelIds, setChannelEnabled } from '@/lib/db';
+         getDisabledChannelIds, setChannelEnabled,
+         recordSourceRun, getSourceStatuses } from '@/lib/db';
 
 async function makeTestDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -217,5 +218,96 @@ describe('channel on/off flag', () => {
     await saveChannel(db, { ...channel, id: 2, channelId: 'UC456', name: 'Other' });
     await setChannelEnabled(db, 'UC123', false);
     expect(await getDisabledChannelIds(db)).toEqual(new Set(['UC123']));
+  });
+});
+
+describe('source run log', () => {
+  const channel = { id: 1, channelId: 'UC123', handle: '@test', name: 'Test Channel', weight: 0.5 };
+
+  async function dbWithChannel() {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    return db;
+  }
+
+  it('lists a source that has never run', async () => {
+    const db = await dbWithChannel();
+    const [status] = await getSourceStatuses(db);
+    expect(status.name).toBe('Test Channel');
+    expect(status.lastSuccessAt).toBeNull();
+    expect(status.lastError).toBeNull();
+    expect(status.lastRunOk).toBeNull();
+  });
+
+  it('records a successful pull with its item count', async () => {
+    const db = await dbWithChannel();
+    await recordSourceRun(db, { channelId: 'UC123', success: true, items: 3 });
+    const [status] = await getSourceStatuses(db);
+    expect(status.lastSuccessAt).not.toBeNull();
+    expect(status.lastSuccessItems).toBe(3);
+    expect(status.lastRunOk).toBe(true);
+    expect(status.lastError).toBeNull();
+  });
+
+  it('records a failure with its error', async () => {
+    const db = await dbWithChannel();
+    await recordSourceRun(db, { channelId: 'UC123', success: false, items: 0, error: 'RSS fetch failed: 404' });
+    const [status] = await getSourceStatuses(db);
+    expect(status.lastRunOk).toBe(false);
+    expect(status.lastError).toBe('RSS fetch failed: 404');
+    expect(status.lastSuccessAt).toBeNull();
+  });
+
+  it('still shows the last successful pull after a later failure', async () => {
+    const db = await dbWithChannel();
+    await recordSourceRun(db, { channelId: 'UC123', success: true, items: 5 });
+    await recordSourceRun(db, { channelId: 'UC123', success: false, items: 0, error: 'boom' });
+    const [status] = await getSourceStatuses(db);
+    // The whole point of the page: a source that just broke should still say
+    // when it last worked.
+    expect(status.lastSuccessItems).toBe(5);
+    expect(status.lastSuccessAt).not.toBeNull();
+    expect(status.lastError).toBe('boom');
+    expect(status.lastRunOk).toBe(false);
+  });
+
+  it('still shows the last error after a later success', async () => {
+    const db = await dbWithChannel();
+    await recordSourceRun(db, { channelId: 'UC123', success: false, items: 0, error: 'transient' });
+    await recordSourceRun(db, { channelId: 'UC123', success: true, items: 2 });
+    const [status] = await getSourceStatuses(db);
+    expect(status.lastRunOk).toBe(true);
+    expect(status.lastError).toBe('transient');
+  });
+
+  it('keeps the most recent of several errors', async () => {
+    const db = await dbWithChannel();
+    await recordSourceRun(db, { channelId: 'UC123', success: false, items: 0, error: 'older' });
+    await recordSourceRun(db, { channelId: 'UC123', success: false, items: 0, error: 'newer' });
+    const [status] = await getSourceStatuses(db);
+    expect(status.lastError).toBe('newer');
+  });
+
+  it('keeps sources separate', async () => {
+    const db = await dbWithChannel();
+    await saveChannel(db, { ...channel, id: 2, channelId: 'UC456', name: 'Other' });
+    await recordSourceRun(db, { channelId: 'UC123', success: true, items: 1 });
+    await recordSourceRun(db, { channelId: 'UC456', success: false, items: 0, error: 'only mine' });
+    const statuses = await getSourceStatuses(db);
+    const first = statuses.find(s => s.channelId === 'UC123')!;
+    const second = statuses.find(s => s.channelId === 'UC456')!;
+    expect(first.lastError).toBeNull();
+    expect(first.lastSuccessItems).toBe(1);
+    expect(second.lastError).toBe('only mine');
+    expect(second.lastSuccessAt).toBeNull();
+  });
+
+  it('records a successful pull that found nothing as a success', async () => {
+    const db = await dbWithChannel();
+    await recordSourceRun(db, { channelId: 'UC123', success: true, items: 0 });
+    const [status] = await getSourceStatuses(db);
+    expect(status.lastRunOk).toBe(true);
+    expect(status.lastSuccessItems).toBe(0);
+    expect(status.lastSuccessAt).not.toBeNull();
   });
 });
