@@ -1,10 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { alertRecipients } from '@/lib/email';
+import { alertRecipients, digestRecipients } from '@/lib/email';
 
 const original = { ...process.env };
 afterEach(() => {
   process.env.ALERT_EMAILS = original.ALERT_EMAILS;
   process.env.NOTIFY_EMAIL = original.NOTIFY_EMAIL;
+  process.env.DIGEST_EMAILS = original.DIGEST_EMAILS;
 });
 
 describe('alertRecipients', () => {
@@ -33,5 +34,18 @@ describe('alertRecipients', () => {
     delete process.env.ALERT_EMAILS;
     delete process.env.NOTIFY_EMAIL;
     expect(alertRecipients()).toEqual([]);
+  });
+});
+
+describe('digestRecipients', () => {
+  it('sends the summary to nobody when DIGEST_EMAILS is unset, even with alerts on', () => {
+    delete process.env.DIGEST_EMAILS;
+    process.env.ALERT_EMAILS = 'kush@altiro.io';
+    expect(digestRecipients()).toEqual([]);
+  });
+
+  it('reads its own comma-separated list', () => {
+    process.env.DIGEST_EMAILS = 'ray@example.com, kush@altiro.io';
+    expect(digestRecipients()).toEqual(['ray@example.com', 'kush@altiro.io']);
   });
 });
