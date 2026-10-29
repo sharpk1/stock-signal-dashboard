@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { runFetch } from '@/lib/fetch-pipeline';
-import { sendNewVideosEmail, sendAlertEmail } from '@/lib/email';
+import { sendAlertEmail } from '@/lib/email';
 import { getDb, getSourceAlertStates } from '@/lib/db';
 import { decideAlerts } from '@/lib/alerts';
 
@@ -17,16 +17,8 @@ export async function GET(request: Request) {
   try {
     const result = await runFetch();
 
-    let emailed = false;
-    if (result.newVideos.length > 0 && process.env.POSTMARK_SERVER_TOKEN && process.env.NOTIFY_EMAIL) {
-      try {
-        await sendNewVideosEmail(result.newVideos);
-        emailed = true;
-      } catch (err) {
-        console.error('email send failed:', err);
-        result.errors.push(`email send failed: ${err instanceof Error ? err.message : err}`);
-      }
-    }
+    // No per-run email here: this runs every three hours, and eight digests a
+    // day is not a daily summary. /api/daily-digest sends one, once a day.
 
     // Tell someone when a source breaks or the AI credit runs out — this runs
     // unattended, so nobody sees the response above.
@@ -40,7 +32,7 @@ export async function GET(request: Request) {
       result.errors.push(`alert send failed: ${err instanceof Error ? err.message : err}`);
     }
 
-    return NextResponse.json({ ...result, emailed, alerted });
+    return NextResponse.json({ ...result, alerted });
   } catch (err) {
     console.error('cron failed:', err);
     return NextResponse.json(
