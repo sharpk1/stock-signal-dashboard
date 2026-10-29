@@ -77,6 +77,8 @@ export async function initDb(db: Client): Promise<void> {
     'ALTER TABLE channels ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1',
     // Null for anything fetched; set only on items pasted in by hand (B10).
     'ALTER TABLE videos ADD COLUMN item_type TEXT',
+    // Substack posts only: 'video' when the post embeds a YouTube video, else 'article'.
+    'ALTER TABLE videos ADD COLUMN media TEXT',
     // Hotlinked profile picture, refreshed weekly by the fetch run (lib/avatars).
     'ALTER TABLE channels ADD COLUMN avatar_url TEXT',
     'ALTER TABLE channels ADD COLUMN avatar_checked_at TEXT',
@@ -651,6 +653,13 @@ export async function getVideosMissingSummary(db: Client, days: number): Promise
 /** Sets only the summary, leaving the stored transcript alone. */
 export async function updateVideoSummary(db: Client, videoRowId: number, summary: string): Promise<void> {
   await db.execute({ sql: 'UPDATE videos SET summary = ? WHERE id = ?', args: [summary, videoRowId] });
+}
+
+export type SubstackMedia = 'video' | 'article';
+
+/** Records whether a Substack post is a video or an article, for its label. */
+export async function setVideoMedia(db: Client, videoRowId: number, media: SubstackMedia): Promise<void> {
+  await db.execute({ sql: 'UPDATE videos SET media = ? WHERE id = ?', args: [media, videoRowId] });
 }
 
 export async function updateVideoTranscript(

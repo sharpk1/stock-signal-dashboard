@@ -1,5 +1,5 @@
 import { CHANNELS, Channel } from '@/lib/channels';
-import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert, bumpTranscriptAttempts, getDisabledChannelIds, recordSourceRun, getLatestChannelSummary } from '@/lib/db';
+import { getDb, saveChannel, saveVideo, setVideoMedia, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert, bumpTranscriptAttempts, getDisabledChannelIds, recordSourceRun, getLatestChannelSummary } from '@/lib/db';
 import { fetchRecentVideos, fetchRecentVideosWithSource, fetchTranscript, type VideoSource } from '@/lib/youtube';
 import { fetchSubstackPosts, extractSubstackContent, SubstackPost,
          cookieAgeWarning, emptyHarvestWarning, describeUnusablePost } from '@/lib/substack';
@@ -180,6 +180,13 @@ export async function runFetch(): Promise<FetchResult> {
         title: video.title,
         publishedAt: video.publishedAt,
       });
+
+      // Every listed post gets its label set, processed or not, so posts saved
+      // before the column existed pick it up on the next run.
+      if (channel.source === 'substack') {
+        const { youtubeVideoId } = extractSubstackContent((video as SubstackPost).bodyHtml);
+        await setVideoMedia(db, videoRowId, youtubeVideoId ? 'video' : 'article');
+      }
 
       // Check processing state
       const existing = (await db.execute({

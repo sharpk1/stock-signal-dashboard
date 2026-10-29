@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { itemUrl } from '@/lib/item-url';
 import { getDb } from '@/lib/db';
 
 export interface VideoUrl {
@@ -19,6 +20,8 @@ export interface ChannelVideo {
   summary: string | null;
   /** Set only on items pasted in by hand; null for anything fetched. */
   item_type: string | null;
+  /** Substack posts: 'video' or 'article'; null for YouTube and not-yet-labelled posts. */
+  media: string | null;
   /** Empty for a pasted item — there is no public page to link to. */
   url: string;
   mentions: { ticker: string; sentiment: string; conviction: number }[];
@@ -36,12 +39,12 @@ export async function GET(request: Request) {
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const rows = (await db.execute(`
-    SELECT v.video_id, v.title, v.published_at, v.pinned, v.summary, v.item_type, c.name AS channel_name, c.channel_id
+    SELECT v.video_id, v.title, v.published_at, v.pinned, v.summary, v.item_type, v.media, c.name AS channel_name, c.channel_id
     FROM videos v
     JOIN channels c ON v.channel_id = c.channel_id
     ${whereClause}
     ORDER BY v.pinned DESC, v.published_at DESC
-  `)).rows as unknown as { video_id: string; title: string; published_at: string; pinned: number; summary: string | null; item_type: string | null; channel_name: string; channel_id: string }[];
+  `)).rows as unknown as { video_id: string; title: string; published_at: string; pinned: number; summary: string | null; item_type: string | null; media: string | null; channel_name: string; channel_id: string }[];
 
   if (channelId) {
     const mentionRows = (await db.execute({
@@ -63,7 +66,7 @@ export async function GET(request: Request) {
 
     const videos: ChannelVideo[] = rows.map(r => ({
       ...r,
-      url: r.item_type ? '' : `https://youtube.com/watch?v=${r.video_id}`,
+      url: r.item_type ? '' : itemUrl(r.channel_id, r.video_id),
       mentions: mentionsByVideo[r.video_id] ?? [],
     }));
     return NextResponse.json(videos);
