@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseExtractionResponse, chunkTranscript, mergeMentions, type TickerMention } from '@/lib/extract';
+import { parseExtractionResponse, chunkTranscript, mergeMentions, responseText, type TickerMention } from '@/lib/extract';
 
 describe('parseExtractionResponse', () => {
   it('parses valid JSON array from Claude response', () => {
@@ -117,5 +117,45 @@ describe('mergeMentions', () => {
 
   it('returns an empty list when no chunk found anything', () => {
     expect(mergeMentions([[], []])).toEqual([]);
+  });
+});
+
+describe('responseText', () => {
+  it('skips a leading thinking block and reads the text after it', () => {
+    const message = {
+      content: [
+        { type: 'thinking', thinking: '', signature: 'sig' },
+        { type: 'text', text: 'The summary.', citations: null },
+      ],
+    } as unknown as Parameters<typeof responseText>[0];
+    expect(responseText(message)).toBe('The summary.');
+  });
+
+  it('joins several text blocks', () => {
+    const message = {
+      content: [
+        { type: 'text', text: 'Part one. ', citations: null },
+        { type: 'text', text: 'Part two.', citations: null },
+      ],
+    } as unknown as Parameters<typeof responseText>[0];
+    expect(responseText(message)).toBe('Part one. Part two.');
+  });
+
+  it('returns an empty string when there is no text block', () => {
+    const message = {
+      content: [{ type: 'thinking', thinking: '', signature: 'sig' }],
+    } as unknown as Parameters<typeof responseText>[0];
+    expect(responseText(message)).toBe('');
+  });
+});
+
+describe('parseExtractionResponse with trailing commentary', () => {
+  it('reads the fenced array and ignores the explanation after it', () => {
+    const raw = '```json\n[{"ticker":"TSLA","company":"Tesla","sentiment":"bullish","conviction":72,"quote":"q"}]\n```\n\nThe content mentions Tesla once.';
+    expect(parseExtractionResponse(raw).map(m => m.ticker)).toEqual(['TSLA']);
+  });
+
+  it('still reads an empty fenced array followed by prose', () => {
+    expect(parseExtractionResponse('```json\n[]\n```\n\nNo specific stocks are discussed.')).toEqual([]);
   });
 });

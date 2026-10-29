@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { getDb, saveConversation } from '@/lib/db';
 import { chatModel } from '@/lib/models';
+import { responseText } from '@/lib/extract';
 import { recordUsage } from '@/lib/usage';
 import { itemUrl } from '@/lib/item-url';
 
@@ -104,7 +105,7 @@ export async function POST(request: Request) {
   });
 
   recordUsage(model, response.usage.input_tokens, response.usage.output_tokens);
-  const answer = response.content[0].type === 'text' ? response.content[0].text : 'No answer found.';
+  const answer = responseText(response) || 'No answer found.';
   await saveConversation(db, question, answer);
   // Return only what the answer actually cited, so the list under it is the
   // items it used rather than everything it was shown.
