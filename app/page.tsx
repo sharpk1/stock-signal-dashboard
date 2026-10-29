@@ -143,7 +143,7 @@ export default function Page() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'recent' | 'signals'>('recent');
+  const [activeTab, setActiveTab] = useState<'recent' | 'signals'>('signals');
   const [digest, setDigest] = useState<DigestVideo[]>([]);
   const [digestLoading, setDigestLoading] = useState(false);
   const [digestDays, setDigestDays] = useState<3 | 7 | 14>(7);
