@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CHANNELS } from '@/lib/channels';
 import { ETORO_SNAPSHOTS, type EtoroSnapshot } from '@/lib/etoro';
+import { PASTE_TYPE_LABELS, isPasteType } from '@/lib/paste';
 import type { ChannelVideo } from '@/app/api/videos/route';
 import type { ChatSource } from '@/app/api/chat/route';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
@@ -276,6 +277,11 @@ export default function ChannelPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start gap-2 flex-wrap">
                         <span className="font-medium text-gray-900 text-sm">{video.title}</span>
+                        {video.item_type && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium text-violet-800 bg-violet-50 border border-violet-200">
+                            {isPasteType(video.item_type) ? PASTE_TYPE_LABELS[video.item_type] : video.item_type}
+                          </span>
+                        )}
                         {isPinned && <span className="text-xs text-amber-600 font-medium">📌 pinned</span>}
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">{video.published_at.slice(0, 10)}</p>
@@ -298,7 +304,7 @@ export default function ChannelPage() {
                     >
                       📌
                     </button>
-                    <a
+                    {video.url && <a
                       href={video.url}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -306,7 +312,7 @@ export default function ChannelPage() {
                       className="shrink-0 text-gray-400 hover:text-blue-600 text-sm pt-0.5"
                     >
                       ↗
-                    </a>
+                    </a>}
                   </div>
 
                   {isExpanded && (

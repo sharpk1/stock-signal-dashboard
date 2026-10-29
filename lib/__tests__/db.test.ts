@@ -3,7 +3,7 @@ import { createClient, type Client } from '@libsql/client';
 import { initDb, saveChannel, saveVideo, saveMention, getLeaderboard, getMentionDetails,
          updateVideoTranscript, saveMemory, getMemories, saveConversation, getRecentConversations,
          getDisabledChannelIds, setChannelEnabled,
-         recordSourceRun, getSourceStatuses, getSourceAlertStates } from '@/lib/db';
+         recordSourceRun, getSourceStatuses, getSourceAlertStates, savePastedItem } from '@/lib/db';
 
 async function makeTestDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -342,5 +342,43 @@ describe('getSourceAlertStates', () => {
     const [state] = await getSourceAlertStates(db);
     expect(state.latestOk).toBe(false);
     expect(state.previousOk).toBeNull();
+  });
+});
+
+describe('savePastedItem', () => {
+  const channel = { id: 9, channelId: 'UCKevin', handle: '@MeetKevin', name: 'Meet Kevin', weight: 0.1 };
+  const item = {
+    itemId: 'paste-abc123', channelId: 'UCKevin',
+    title: 'Alpha report — 2026-10-29', publishedAt: '2026-10-29', itemType: 'alpha-report',
+  };
+
+  it('stores a new item and says it is new', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    const result = await savePastedItem(db, item);
+    expect(result.isNew).toBe(true);
+    const row = (await db.execute({ sql: 'SELECT title, item_type FROM videos WHERE video_id = ?', args: ['paste-abc123'] }))
+      .rows[0] as unknown as { title: string; item_type: string };
+    expect(row.item_type).toBe('alpha-report');
+  });
+
+  it('does not create a second item for the same paste', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    const first = await savePastedItem(db, item);
+    const second = await savePastedItem(db, item);
+    expect(second.isNew).toBe(false);
+    expect(second.videoRowId).toBe(first.videoRowId);
+    const count = (await db.execute('SELECT COUNT(*) AS n FROM videos')).rows[0] as unknown as { n: number };
+    expect(Number(count.n)).toBe(1);
+  });
+
+  it('leaves item_type null on an ordinary fetched video', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, channel);
+    await saveVideo(db, { videoId: 'yt1', channelId: 'UCKevin', title: 'A video', publishedAt: '2026-10-29' });
+    const row = (await db.execute({ sql: 'SELECT item_type FROM videos WHERE video_id = ?', args: ['yt1'] }))
+      .rows[0] as unknown as { item_type: string | null };
+    expect(row.item_type).toBeNull();
   });
 });

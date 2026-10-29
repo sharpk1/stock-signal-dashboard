@@ -73,6 +73,8 @@ export async function initDb(db: Client): Promise<void> {
     'ALTER TABLE videos ADD COLUMN transcript_attempts INTEGER NOT NULL DEFAULT 0',
     // A channel is on unless someone turns it off, so existing rows default to 1.
     'ALTER TABLE channels ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1',
+    // Null for anything fetched; set only on items pasted in by hand (B10).
+    'ALTER TABLE videos ADD COLUMN item_type TEXT',
   ]) {
     try {
       await db.execute(stmt);
@@ -492,6 +494,39 @@ export async function getAlerts(db: Client): Promise<{ alerts: ConvergenceAlert[
 
 export async function markAlertRead(db: Client, id: number): Promise<void> {
   await db.execute({ sql: 'UPDATE convergence_alerts SET read = 1 WHERE id = ?', args: [id] });
+}
+
+/**
+ * Store one hand-pasted item. The row id is derived from the text, so pasting
+ * the same report twice returns the row that already exists instead of making
+ * a second copy — `isNew` tells the caller which happened.
+ */
+export async function savePastedItem(
+  db: Client,
+  item: { itemId: string; channelId: string; title: string; publishedAt: string; itemType: string },
+): Promise<{ videoRowId: number; isNew: boolean }> {
+  const existing = (await db.execute({
+    sql: 'SELECT id FROM videos WHERE video_id = ?',
+    args: [item.itemId],
+  })).rows;
+  if (existing.length > 0) {
+    return { videoRowId: Number(existing[0].id), isNew: false };
+  }
+
+  const result = await db.execute({
+    sql: `
+      INSERT INTO videos (video_id, channel_id, title, published_at, item_type)
+      VALUES (:itemId, :channelId, :title, :publishedAt, :itemType)
+    `,
+    args: {
+      itemId: item.itemId,
+      channelId: item.channelId,
+      title: item.title,
+      publishedAt: item.publishedAt,
+      itemType: item.itemType,
+    },
+  });
+  return { videoRowId: Number(result.lastInsertRowid), isNew: true };
 }
 
 export async function updateVideoTranscript(

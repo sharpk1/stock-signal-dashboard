@@ -12,6 +12,7 @@ import type { VideoUrl } from '@/app/api/videos/route';
 import type { DigestVideo } from '@/app/api/digest/route';
 import type { ChannelToggle } from '@/app/api/channels/route';
 import type { ChatSource } from '@/app/api/chat/route';
+import { PASTE_TYPES, PASTE_TYPE_LABELS, todayIso, MIN_PASTE_CHARS, type PasteType } from '@/lib/paste';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
@@ -144,6 +145,14 @@ export default function Page() {
   const [digestDays, setDigestDays] = useState<3 | 7 | 14>(7);
   const [digestExpanded, setDigestExpanded] = useState<string | null>(null);
   const [leaderboardDays, setLeaderboardDays] = useState<7 | 14 | 30>(7);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteType, setPasteType] = useState<PasteType>('alpha-report');
+  const [pasteDate, setPasteDate] = useState(todayIso());
+  const [pasteTitleInput, setPasteTitleInput] = useState('');
+  const [pasteText, setPasteText] = useState('');
+  const [pasteSaving, setPasteSaving] = useState(false);
+  const [pasteResult, setPasteResult] = useState<string | null>(null);
+  const [pasteError, setPasteError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportVideos, setExportVideos] = useState<VideoUrl[]>([]);
   const [exportDays, setExportDays] = useState<7 | 30 | 0>(7);
@@ -203,6 +212,41 @@ export default function Page() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  async function submitPaste() {
+    setPasteSaving(true);
+    setPasteResult(null);
+    setPasteError(null);
+    try {
+      const res = await fetch('/api/paste', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: pasteType,
+          date: pasteDate,
+          title: pasteTitleInput,
+          text: pasteText,
+        }),
+      });
+      const data = await res.json() as { error?: string; duplicate?: boolean; title?: string; tickers?: string[] };
+      if (!res.ok) {
+        setPasteError(data.error ?? 'Something went wrong saving that.');
+        return;
+      }
+      const tickers = data.tickers ?? [];
+      setPasteResult(
+        data.duplicate
+          ? `Already saved — "${data.title}" is in already${tickers.length ? ` (${tickers.join(', ')})` : ''}.`
+          : `Saved "${data.title}"${tickers.length ? ` — found ${tickers.join(', ')}` : ' — no tickers found'}.`,
+      );
+      setPasteText('');
+      setPasteTitleInput('');
+    } catch {
+      setPasteError('Could not reach the server.');
+    } finally {
+      setPasteSaving(false);
+    }
+  }
 
   async function openExport() {
     setExportOpen(true);
@@ -300,6 +344,16 @@ export default function Page() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
               Export URLs
+            </button>
+            <button
+              onClick={() => { setPasteOpen(true); setPasteResult(null); setPasteError(null); }}
+              className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              title="Paste a Meet Kevin Alpha report or member livestream transcript"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              Paste
             </button>
             <button
               onClick={() => setChatOpen(true)}
@@ -645,6 +699,103 @@ export default function Page() {
         )}
         </>)}
       </main>
+
+      {/* Paste box — Meet Kevin's private content (B10) */}
+      {pasteOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4"
+          onClick={() => setPasteOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-200 shrink-0">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-gray-900">Paste a Meet Kevin item</h2>
+                <button onClick={() => setPasteOpen(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Copy an Alpha report or member livestream transcript from app.meetkevin.com. It is summarised and ticker-extracted like any other item.
+              </p>
+            </div>
+
+            <div className="px-6 py-4 flex-1 overflow-y-auto space-y-4">
+              <div className="flex flex-wrap items-end gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+                  <div className="flex items-center gap-1">
+                    {PASTE_TYPES.map(t => (
+                      <button
+                        key={t}
+                        onClick={() => setPasteType(t)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                          pasteType === t
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
+                        }`}
+                      >
+                        {PASTE_TYPE_LABELS[t]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1" htmlFor="paste-date">Date</label>
+                  <input
+                    id="paste-date"
+                    type="date"
+                    value={pasteDate}
+                    onChange={e => setPasteDate(e.target.value)}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div className="flex-1 min-w-[12rem]">
+                  <label className="block text-xs font-medium text-gray-600 mb-1" htmlFor="paste-title">Title <span className="text-gray-400">(optional)</span></label>
+                  <input
+                    id="paste-title"
+                    type="text"
+                    value={pasteTitleInput}
+                    onChange={e => setPasteTitleInput(e.target.value)}
+                    placeholder={`${PASTE_TYPE_LABELS[pasteType]} — ${pasteDate}`}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1" htmlFor="paste-text">Text</label>
+                <textarea
+                  id="paste-text"
+                  value={pasteText}
+                  onChange={e => setPasteText(e.target.value)}
+                  rows={12}
+                  placeholder="Paste the full report or transcript here…"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">
+                  {pasteText.trim().length.toLocaleString()} characters
+                  {pasteText.trim().length < MIN_PASTE_CHARS && ` · at least ${MIN_PASTE_CHARS} needed`}
+                </p>
+              </div>
+
+              {pasteError && <p className="text-sm text-red-600">{pasteError}</p>}
+              {pasteResult && <p className="text-sm text-emerald-700">{pasteResult}</p>}
+            </div>
+
+            <div className="px-6 py-3 border-t border-gray-200 flex items-center justify-between shrink-0">
+              <span className="text-[11px] text-gray-400">Saved under Meet Kevin</span>
+              <button
+                onClick={submitPaste}
+                disabled={pasteSaving || pasteText.trim().length < MIN_PASTE_CHARS}
+                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                {pasteSaving ? 'Saving and analysing…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Export URLs modal */}
       {exportOpen && (
