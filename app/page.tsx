@@ -8,11 +8,9 @@ import remarkGfm from 'remark-gfm';
 import type { LeaderboardEntry } from '@/app/api/leaderboard/route';
 import { ETORO_SNAPSHOTS } from '@/lib/etoro';
 import { CHANNELS } from '@/lib/channels';
-import type { ChannelWinRate } from '@/app/api/winrate/route';
 import type { VideoUrl } from '@/app/api/videos/route';
 import type { DigestVideo } from '@/app/api/digest/route';
 import type { ChannelToggle } from '@/app/api/channels/route';
-import type { ConvergenceAlert } from '@/lib/db';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
@@ -139,19 +137,12 @@ export default function Page() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'recent' | 'signals' | 'track-record' | 'notifications'>('recent');
+  const [activeTab, setActiveTab] = useState<'recent' | 'signals'>('recent');
   const [digest, setDigest] = useState<DigestVideo[]>([]);
   const [digestLoading, setDigestLoading] = useState(false);
   const [digestDays, setDigestDays] = useState<3 | 7 | 14>(7);
   const [digestExpanded, setDigestExpanded] = useState<string | null>(null);
   const [leaderboardDays, setLeaderboardDays] = useState<7 | 14 | 30>(7);
-  const [alerts, setAlerts] = useState<ConvergenceAlert[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [alertsLoading, setAlertsLoading] = useState(false);
-  const [winRateData, setWinRateData] = useState<ChannelWinRate[]>([]);
-  const [winRateDays, setWinRateDays] = useState<30 | 60 | 90>(30);
-  const [expandedWinChannel, setExpandedWinChannel] = useState<string | null>(null);
-  const [winRateLoading, setWinRateLoading] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportVideos, setExportVideos] = useState<VideoUrl[]>([]);
   const [exportDays, setExportDays] = useState<7 | 30 | 0>(7);
@@ -168,26 +159,7 @@ export default function Page() {
     }
   }, []);
 
-  const loadAlerts = useCallback(async () => {
-    setAlertsLoading(true);
-    try {
-      const res = await fetch('/api/alerts');
-      const data = await res.json() as { alerts: ConvergenceAlert[]; unreadCount: number };
-      setAlerts(data.alerts);
-      setUnreadCount(data.unreadCount);
-    } finally {
-      setAlertsLoading(false);
-    }
-  }, []);
-
-  async function markRead(id: number) {
-    await fetch(`/api/alerts/${id}`, { method: 'PATCH' });
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, read: 1 } : a));
-    setUnreadCount(prev => Math.max(0, prev - 1));
-  }
-
   useEffect(() => { loadLeaderboard(leaderboardDays); }, [loadLeaderboard, leaderboardDays]);
-  useEffect(() => { loadAlerts(); }, [loadAlerts]);
 
   useEffect(() => {
     let cancelled = false;
@@ -231,21 +203,6 @@ export default function Page() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  const loadWinRate = useCallback(async (days: 30 | 60 | 90) => {
-    setWinRateLoading(true);
-    try {
-      const res = await fetch(`/api/winrate?window=${days}`);
-      const data: ChannelWinRate[] = await res.json();
-      setWinRateData(data);
-    } finally {
-      setWinRateLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === 'track-record') loadWinRate(winRateDays);
-  }, [activeTab, winRateDays, loadWinRate]);
-
   async function openExport() {
     setExportOpen(true);
     const res = await fetch(`/api/videos?days=${exportDays}`);
@@ -276,7 +233,7 @@ export default function Page() {
       const data = await res.json();
       setFetchResult(data);
       setLastFetched(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
-      await Promise.all([loadLeaderboard(leaderboardDays), loadAlerts(), loadDigest(digestDays)]);
+      await Promise.all([loadLeaderboard(leaderboardDays), loadDigest(digestDays)]);
     } finally {
       setFetching(false);
     }
@@ -406,27 +363,6 @@ export default function Page() {
             }`}
           >
             Signals
-          </button>
-          <button
-            onClick={() => setActiveTab('track-record')}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              activeTab === 'track-record' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Track Record
-          </button>
-          <button
-            onClick={() => { setActiveTab('notifications'); if (activeTab !== 'notifications') loadAlerts(); }}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-              activeTab === 'notifications' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Notifications
-            {unreadCount > 0 && (
-              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold">
-                {unreadCount}
-              </span>
-            )}
           </button>
         </div>
 
@@ -697,175 +633,6 @@ export default function Page() {
           </div>
         )}
         </>)}
-
-        {activeTab === 'notifications' && (
-          <div>
-            {alertsLoading ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-3">
-                <svg className="animate-spin h-6 w-6 text-blue-500" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-                <span className="text-gray-400 text-sm">Loading alerts…</span>
-              </div>
-            ) : alerts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-                <div className="w-14 h-14 rounded-2xl bg-white border border-gray-200 shadow-sm flex items-center justify-center text-2xl">⚡</div>
-                <div>
-                  <p className="text-gray-800 font-medium">No convergence alerts yet</p>
-                  <p className="text-gray-500 text-sm mt-1">Alerts appear when RR and another channel both mention the same ticker</p>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-gray-200 overflow-hidden shadow-sm bg-white divide-y divide-gray-100">
-                {alerts.map(alert => {
-                  const quotes = (() => { try { return JSON.parse(alert.quotes ?? '[]') as { quote: string; channel_name: string }[]; } catch { return []; } })();
-                  const otherChannels = alert.channels.split(',').filter(c => c.trim() !== 'Robert Reynolds').map(c => c.trim());
-                  return (
-                    <div
-                      key={alert.id}
-                      onClick={() => alert.read === 0 && markRead(alert.id)}
-                      className={`px-5 py-4 cursor-pointer transition-colors ${alert.read === 0 ? 'bg-amber-50/40 hover:bg-amber-50' : 'hover:bg-gray-50'}`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-amber-500 text-sm">⚡</span>
-                          <span className="font-mono font-bold text-blue-600 tracking-wide">{alert.ticker}</span>
-                          <span className="text-gray-500 text-sm">— RR + {otherChannels.join(', ')}</span>
-                          {alert.read === 0 && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500 text-white">NEW</span>
-                          )}
-                        </div>
-                        <span className="text-xs text-gray-400 shrink-0">{alert.alerted_at.slice(0, 10)}</span>
-                      </div>
-                      {quotes.length > 0 && (
-                        <div className="mt-2 space-y-1.5 pl-5">
-                          {quotes.map((q, i) => (
-                            <p key={i} className="text-xs text-gray-600 italic">
-                              <span className="font-medium not-italic text-gray-700">{q.channel_name}:</span> &ldquo;{q.quote.length > 140 ? q.quote.slice(0, 140) + '…' : q.quote}&rdquo;
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'track-record' && (
-          <div>
-            {/* Window toggle */}
-            <div className="flex items-center gap-1 mb-6">
-              <span className="text-xs text-gray-500 mr-2">Evaluation window:</span>
-              {([30, 60, 90] as const).map(d => (
-                <button
-                  key={d}
-                  onClick={() => setWinRateDays(d)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    winRateDays === d
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
-                  }`}
-                >
-                  {d}d
-                </button>
-              ))}
-            </div>
-
-            {winRateLoading ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-3">
-                <svg className="animate-spin h-6 w-6 text-blue-500" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-                <span className="text-gray-400 text-sm">Loading track record…</span>
-              </div>
-            ) : (
-              <>
-                {/* Channel scorecards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                  {winRateData.map(ch => {
-                    const isSelected = expandedWinChannel === ch.channel_name;
-                    const barColor = ch.win_rate >= 65 ? 'bg-emerald-500' : ch.win_rate >= 50 ? 'bg-amber-400' : 'bg-red-400';
-                    const rateColor = ch.win_rate >= 65 ? 'text-emerald-600' : ch.win_rate >= 50 ? 'text-amber-600' : 'text-red-500';
-                    return (
-                      <button
-                        key={ch.channel_name}
-                        onClick={() => setExpandedWinChannel(isSelected ? null : ch.channel_name)}
-                        className={`text-left p-5 rounded-xl border bg-white shadow-sm transition-all ${
-                          isSelected ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <div className="text-sm font-semibold text-gray-800 mb-4">{ch.channel_name}</div>
-                        <div className={`text-4xl font-bold mb-0.5 ${rateColor}`}>{ch.win_rate}%</div>
-                        <div className="text-xs text-gray-400 mb-3">Win Rate</div>
-                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3">
-                          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${ch.win_rate}%` }} />
-                        </div>
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="text-emerald-600 font-medium">{ch.wins}W</span>
-                          <span className="text-gray-300">·</span>
-                          <span className="text-red-500 font-medium">{ch.losses}L</span>
-                          {ch.skips > 0 && <><span className="text-gray-300">·</span><span className="text-gray-500">{ch.skips} skip</span></>}
-                          <span className="text-gray-300">·</span>
-                          <span className="text-gray-400">{ch.wins + ch.losses + ch.skips} calls</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Expanded call history */}
-                {(() => {
-                  const ch = winRateData.find(c => c.channel_name === expandedWinChannel);
-                  if (!ch) return null;
-                  return (
-                    <div className="rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm">
-                      <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
-                        <span className="font-semibold text-gray-800 text-sm">{ch.channel_name}</span>
-                        <span className="text-gray-400 text-sm ml-2">— {ch.wins + ch.losses + ch.skips} calls · last {winRateDays}d</span>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <div className="min-w-[720px]">
-                          <div className="grid grid-cols-[80px_1fr_100px_65px_80px_80px_70px_90px] px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 border-b border-gray-100">
-                            <span>Ticker</span>
-                            <span>Company</span>
-                            <span>Call</span>
-                            <span>Conv.</span>
-                            <span>Entry</span>
-                            <span>Now</span>
-                            <span>Return</span>
-                            <span>Outcome</span>
-                          </div>
-                          {ch.calls.map((call, i) => (
-                            <div key={i} className="grid grid-cols-[80px_1fr_100px_65px_80px_80px_70px_90px] px-5 py-3 border-b border-gray-100 last:border-0 items-center hover:bg-gray-50 transition-colors">
-                              <span className="font-mono font-bold text-blue-600 text-sm">{call.ticker}</span>
-                              <span className="text-gray-700 text-sm pr-4 truncate">{call.company}</span>
-                              <SentimentBadge sentiment={call.sentiment} />
-                              <span className="text-gray-600 text-sm">{call.conviction}%</span>
-                              <span className="text-gray-600 text-sm tabular-nums">${call.entry_price >= 100 ? call.entry_price.toFixed(0) : call.entry_price.toFixed(2)}</span>
-                              <span className="text-gray-600 text-sm tabular-nums">${call.current_price >= 100 ? call.current_price.toFixed(0) : call.current_price.toFixed(2)}</span>
-                              <span className={`text-sm font-medium tabular-nums ${
-                                call.outcome === 'skip' ? 'text-gray-400' :
-                                call.return_pct >= 0 ? 'text-emerald-600' : 'text-red-500'
-                              }`}>
-                                {call.outcome === 'skip' ? '—' : `${call.return_pct >= 0 ? '+' : ''}${call.return_pct.toFixed(1)}%`}
-                              </span>
-                              <OutcomeBadge outcome={call.outcome} />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </>
-            )}
-          </div>
-        )}
       </main>
 
       {/* Export URLs modal */}
