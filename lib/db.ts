@@ -3,6 +3,7 @@ import path from 'path';
 import { Channel } from '@/lib/channels';
 import { initDeliverables } from '@/lib/deliverables';
 import type { BudgetAlertLevel } from '@/lib/budget';
+import type { TickerCountRow } from '@/lib/commentators';
 
 export type Db = Client;
 
@@ -76,6 +77,9 @@ export async function initDb(db: Client): Promise<void> {
     'ALTER TABLE channels ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1',
     // Null for anything fetched; set only on items pasted in by hand (B10).
     'ALTER TABLE videos ADD COLUMN item_type TEXT',
+    // Hotlinked profile picture, refreshed weekly by the fetch run (lib/avatars).
+    'ALTER TABLE channels ADD COLUMN avatar_url TEXT',
+    'ALTER TABLE channels ADD COLUMN avatar_checked_at TEXT',
   ]) {
     try {
       await db.execute(stmt);
@@ -192,6 +196,64 @@ export async function setChannelEnabled(
   if (result.rowsAffected === 0) {
     throw new Error(`unknown channel: ${channelId}`);
   }
+}
+
+/** When each channel's avatar was last looked up, by channel id (null = never). */
+export async function getAvatarStates(db: Client): Promise<Map<string, string | null>> {
+  const rows = (await db.execute(
+    'SELECT channel_id, avatar_checked_at FROM channels',
+  )).rows as unknown as { channel_id: string; avatar_checked_at: string | null }[];
+  return new Map(rows.map(r => [r.channel_id, r.avatar_checked_at]));
+}
+
+/** Store a lookup's answer — null when the source has no picture — and stamp it. */
+export async function saveAvatar(db: Client, channelId: string, avatarUrl: string | null): Promise<void> {
+  await db.execute({
+    sql: "UPDATE channels SET avatar_url = ?, avatar_checked_at = datetime('now') WHERE channel_id = ?",
+    args: [avatarUrl, channelId],
+  });
+}
+
+export interface CommentatorCounts {
+  /** Items published in the window, by channel id. */
+  pieces: Map<string, number>;
+  /** Items in the window mentioning each ticker, per channel. */
+  tickers: TickerCountRow[];
+  avatars: Map<string, string | null>;
+}
+
+/**
+ * Raw counts behind the Commentators cards. Windowed on published_at the same
+ * way as getLeaderboard, minus the pinned exception: a card says what someone
+ * put out in the window. ticker_mentions is unique per (item, ticker), so
+ * COUNT(*) there is the number of items mentioning it.
+ */
+export async function getCommentatorCounts(db: Client, days: number): Promise<CommentatorCounts> {
+  const since = `-${days} days`;
+  const inWindow = "rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', ?)";
+  const pieceRows = (await db.execute({
+    sql: `SELECT v.channel_id, COUNT(*) AS n FROM videos v WHERE ${inWindow} GROUP BY v.channel_id`,
+    args: [since],
+  })).rows as unknown as { channel_id: string; n: number }[];
+  const tickerRows = (await db.execute({
+    sql: `
+      SELECT v.channel_id, tm.ticker, COUNT(*) AS n
+      FROM ticker_mentions tm
+      JOIN videos v ON tm.video_id = v.id
+      WHERE ${inWindow}
+      GROUP BY v.channel_id, tm.ticker
+    `,
+    args: [since],
+  })).rows as unknown as { channel_id: string; ticker: string; n: number }[];
+  const avatarRows = (await db.execute(
+    'SELECT channel_id, avatar_url FROM channels',
+  )).rows as unknown as { channel_id: string; avatar_url: string | null }[];
+
+  return {
+    pieces: new Map(pieceRows.map(r => [String(r.channel_id), Number(r.n)])),
+    tickers: tickerRows.map(r => ({ channelId: String(r.channel_id), ticker: String(r.ticker), count: Number(r.n) })),
+    avatars: new Map(avatarRows.map(r => [String(r.channel_id), r.avatar_url === null ? null : String(r.avatar_url)])),
+  };
 }
 
 export interface SourceRun {

@@ -7,11 +7,11 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { LeaderboardEntry } from '@/app/api/leaderboard/route';
 import { ETORO_SNAPSHOTS } from '@/lib/etoro';
-import { CHANNELS } from '@/lib/channels';
 import { itemKind, type ItemKind } from '@/lib/item-kind';
 import type { VideoUrl } from '@/app/api/videos/route';
 import type { DigestVideo } from '@/app/api/digest/route';
-import type { ChannelToggle } from '@/app/api/channels/route';
+import type { Commentator } from '@/app/api/commentators/route';
+import { commentatorMeta, initials } from '@/lib/commentators';
 import type { ChatSource } from '@/app/api/chat/route';
 import { PASTE_TYPES, PASTE_TYPE_LABELS, todayIso, MIN_PASTE_CHARS, type PasteType } from '@/lib/paste';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
@@ -122,10 +122,55 @@ function formatFetchedAt(dateStr: string): string {
 
 const QUOTE_TRUNCATE = 120;
 
-async function fetchDisabledChannels(): Promise<Set<string>> {
-  const res = await fetch('/api/channels');
-  const data: ChannelToggle[] = await res.json();
-  return new Set(data.filter(c => !c.enabled).map(c => c.channelId));
+/** The Commentators cards. Separate from the leaderboard, so a failure here only drops the cards. */
+async function fetchCommentators(days: number): Promise<Commentator[]> {
+  try {
+    const res = await fetch(`/api/commentators?days=${days}`);
+    return res.ok ? await res.json() : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Profile picture, or initials on a gray circle when there's none or it fails to load. */
+function CommentatorAvatar({ name, url }: { name: string; url: string | null }) {
+  const [failed, setFailed] = useState(false);
+  if (url && !failed) {
+    // Plain <img>: avatars are hotlinked from YouTube and Substack CDNs, and
+    // next/image would need each host allowlisted in next.config.
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={url} alt="" onError={() => setFailed(true)} className="w-11 h-11 rounded-full object-cover shrink-0 bg-gray-200" />;
+  }
+  return (
+    <span className="w-11 h-11 rounded-full shrink-0 bg-gray-200 text-gray-600 text-sm font-semibold flex items-center justify-center">
+      {initials(name)}
+    </span>
+  );
+}
+
+function CommentatorCard({ c }: { c: Commentator }) {
+  return (
+    <Link
+      href={`/channel/${c.channelId}`}
+      className="flex items-center gap-3 bg-white border border-gray-200 rounded-[10px] px-3.5 py-3 min-h-16 hover:border-blue-300 transition-colors"
+    >
+      <CommentatorAvatar name={c.name} url={c.avatarUrl} />
+      <div className="flex flex-col gap-[3px] min-w-0 grow">
+        <span className="text-sm font-semibold text-gray-900 truncate">{c.name}</span>
+        <span className="text-xs text-gray-600">{commentatorMeta(c)}</span>
+        <div className="flex gap-1.5 mt-1.5 min-h-[22px]">
+          {c.topTickers.map(t => (
+            <span key={t.ticker} className="flex items-center gap-1 font-mono text-xs font-semibold px-[7px] py-[3px] rounded-md bg-gray-100 text-gray-900">
+              {t.ticker}<span className="font-medium text-gray-600">{t.count}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+        <path d="M9 6l6 6-6 6" />
+      </svg>
+    </Link>
+  );
 }
 
 const KIND_STYLES: Record<ItemKind, string> = {
@@ -149,7 +194,7 @@ export default function Page() {
   const [fetchResult, setFetchResult] = useState<{ videosProcessed: number; tickersFound: number; errors: string[] } | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [disabledChannels, setDisabledChannels] = useState<Set<string> | null>(null);
+  const [commentators, setCommentators] = useState<Commentator[] | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [modalQuote, setModalQuote] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -192,27 +237,9 @@ export default function Page() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchDisabledChannels()
-      .then(ids => { if (!cancelled) setDisabledChannels(ids); })
-      .catch(() => { /* leave the switches disabled rather than guess */ });
+    fetchCommentators(leaderboardDays).then(c => { if (!cancelled) setCommentators(c); });
     return () => { cancelled = true; };
-  }, []);
-
-  async function toggleChannel(channelId: string, enabled: boolean) {
-    setDisabledChannels(prev => {
-      const next = new Set(prev ?? []);
-      if (enabled) next.delete(channelId);
-      else next.add(channelId);
-      return next;
-    });
-    const res = await fetch('/api/channels', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channelId, enabled }),
-    });
-    // Server refused — resync rather than leave the switch lying.
-    if (!res.ok) setDisabledChannels(await fetchDisabledChannels());
-  }
+  }, [leaderboardDays]);
 
   const loadDigest = useCallback(async (days: number) => {
     setDigestLoading(true);
@@ -303,7 +330,11 @@ export default function Page() {
       }
       setFetchResult(data);
       setLastFetched(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
-      await Promise.all([loadLeaderboard(leaderboardDays), loadDigest(digestDays)]);
+      await Promise.all([
+        loadLeaderboard(leaderboardDays),
+        fetchCommentators(leaderboardDays).then(setCommentators),
+        loadDigest(digestDays),
+      ]);
     } finally {
       setFetching(false);
     }
@@ -624,41 +655,21 @@ export default function Page() {
         )}
 
         {activeTab === 'signals' && (<>
-        {/* Channel project links */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          {CHANNELS.map(ch => {
-            const enabled = !disabledChannels?.has(ch.channelId);
-            return (
-              <div
-                key={ch.id}
-                className={`flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full text-xs font-medium bg-white border border-gray-200 transition-colors ${
-                  enabled ? 'text-gray-600' : 'text-gray-400'
-                }`}
-              >
-                <button
-                  onClick={() => toggleChannel(ch.channelId, !enabled)}
-                  disabled={disabledChannels === null}
-                  aria-pressed={enabled}
-                  aria-label={`${enabled ? 'Stop' : 'Resume'} fetching new ${ch.name} items`}
-                  title={enabled
-                    ? `${ch.name} is on — new items are fetched`
-                    : `${ch.name} is off — no new items are fetched`}
-                  className={`relative w-7 h-4 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
-                    enabled ? 'bg-blue-600' : 'bg-gray-300'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
-                      enabled ? 'left-3.5' : 'left-0.5'
-                    }`}
-                  />
-                </button>
-                <Link href={`/channel/${ch.channelId}`} className="hover:text-blue-600 transition-colors">
-                  {ch.name} →
-                </Link>
-              </div>
-            );
-          })}
+        {/* Commentators — one card per channel; the on/off switches live on /sources */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-semibold tracking-wider uppercase text-gray-600">
+              Commentators · last {leaderboardDays} days
+            </span>
+            <Link href="/sources" className="text-sm font-medium text-blue-600 hover:text-blue-700">
+              Manage sources
+            </Link>
+          </div>
+          {commentators && commentators.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {commentators.map(c => <CommentatorCard key={c.channelId} c={c} />)}
+            </div>
+          )}
         </div>
 
         {/* Leaderboard time range selector */}

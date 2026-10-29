@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import type { SourceStatus } from '@/app/api/sources/route';
 import type { BudgetStatus } from '@/app/api/budget/route';
+import type { ChannelToggle } from '@/app/api/channels/route';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
 
 // Stored timestamps are SQLite's `datetime('now')` — "YYYY-MM-DD HH:MM:SS" in
@@ -40,6 +41,41 @@ function StatusDot({ status }: { status: SourceStatus }) {
     : status.lastRunOk ? ['bg-emerald-500', 'Last run succeeded']
     : ['bg-red-500', 'Last run failed'];
   return <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${color}`} title={label} />;
+}
+
+async function fetchDisabledChannels(): Promise<Set<string>> {
+  const res = await fetch('/api/channels');
+  const data: ChannelToggle[] = await res.json();
+  return new Set(data.filter(c => !c.enabled).map(c => c.channelId));
+}
+
+/** On = new items are fetched; off = the pipeline skips this source. Existing items stay. */
+function FetchSwitch({ name, enabled, ready, onToggle }: {
+  name: string;
+  enabled: boolean;
+  ready: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      disabled={!ready}
+      aria-pressed={enabled}
+      aria-label={`${enabled ? 'Stop' : 'Resume'} fetching new ${name} items`}
+      title={enabled
+        ? `${name} is on — new items are fetched`
+        : `${name} is off — no new items are fetched`}
+      className={`relative w-7 h-4 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
+        enabled ? 'bg-blue-600' : 'bg-gray-300'
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
+          enabled ? 'left-3.5' : 'left-0.5'
+        }`}
+      />
+    </button>
+  );
 }
 
 function formatMonth(month: string): string {
@@ -82,6 +118,7 @@ function BudgetCard({ budget }: { budget: BudgetStatus }) {
 export default function SourcesPage() {
   const [sources, setSources] = useState<SourceStatus[] | null>(null);
   const [budget, setBudget] = useState<BudgetStatus | null>(null);
+  const [disabledChannels, setDisabledChannels] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,8 +131,27 @@ export default function SourcesPage() {
       .then(res => (res.ok ? res.json() : null))
       .then((data: BudgetStatus | null) => { if (!cancelled) setBudget(data); })
       .catch(() => { /* leave the card out */ });
+    fetchDisabledChannels()
+      .then(ids => { if (!cancelled) setDisabledChannels(ids); })
+      .catch(() => { /* leave the switches disabled rather than guess */ });
     return () => { cancelled = true; };
   }, []);
+
+  async function toggleChannel(channelId: string, enabled: boolean) {
+    setDisabledChannels(prev => {
+      const next = new Set(prev ?? []);
+      if (enabled) next.delete(channelId);
+      else next.add(channelId);
+      return next;
+    });
+    const res = await fetch('/api/channels', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channelId, enabled }),
+    });
+    // Server refused — resync rather than leave the switch lying.
+    if (!res.ok) setDisabledChannels(await fetchDisabledChannels());
+  }
 
   return (
     <PasswordProtection>
@@ -113,6 +169,7 @@ export default function SourcesPage() {
       <main className="max-w-5xl mx-auto px-6 py-8">
         <p className="text-sm text-gray-500 mb-6">
           Every source, when it last pulled successfully, and anything that has gone wrong since.
+          Switch a source off to stop fetching its new items; what&apos;s already saved stays.
         </p>
 
         {budget && <BudgetCard budget={budget} />}
@@ -130,10 +187,18 @@ export default function SourcesPage() {
           </div>
         ) : (
           <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
-            {sources.map(source => (
+            {sources.map(source => {
+              const enabled = !disabledChannels?.has(source.channelId);
+              return (
               <div key={source.channelId} className="px-5 py-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-2.5 min-w-0">
+                    <FetchSwitch
+                      name={source.name}
+                      enabled={enabled}
+                      ready={disabledChannels !== null}
+                      onToggle={() => toggleChannel(source.channelId, !enabled)}
+                    />
                     <StatusDot status={source} />
                     <Link
                       href={`/channel/${source.channelId}`}
@@ -142,6 +207,7 @@ export default function SourcesPage() {
                       {source.name}
                     </Link>
                     <span className="text-xs text-gray-400 truncate hidden sm:block">{source.handle}</span>
+                    {!enabled && <span className="text-xs font-medium text-gray-500 shrink-0">Off</span>}
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-xs text-gray-500">Last successful pull</div>
@@ -165,7 +231,8 @@ export default function SourcesPage() {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
