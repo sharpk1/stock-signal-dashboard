@@ -12,13 +12,26 @@ export interface TickerMention {
   quote: string;
 }
 
+/**
+ * The text of a reply, from every text block. Sonnet 5.5 thinks by default, so
+ * `content[0]` is a thinking block and reading only it returned '' — every
+ * summary came back empty, and the "What changed" pass then sent that empty
+ * string back and got a 400.
+ */
+export function responseText(message: Pick<Anthropic.Message, 'content'>): string {
+  return message.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map(block => block.text)
+    .join('')
+    .trim();
+}
+
 export function parseExtractionResponse(raw: string): TickerMention[] {
   try {
-    const cleaned = raw
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/\s*```$/, '')
-      .trim();
+    // The model sometimes fences the array and then explains itself, so take
+    // what is inside the fence rather than trimming fences off the ends.
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const cleaned = (fenced ? fenced[1] : raw).trim();
     const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((item): item is TickerMention =>
@@ -153,8 +166,7 @@ Return only the JSON array, no other text.`,
   });
 
   recordUsage(model, message.usage.input_tokens, message.usage.output_tokens);
-  const raw = message.content[0].type === 'text' ? message.content[0].text : '';
-  return parseExtractionResponse(raw);
+  return parseExtractionResponse(responseText(message));
 }
 
 const SUMMARY_SYSTEM_PROMPT = `You are summarising one piece of a stock commentator's output for a research dashboard. Write for a reader deciding whether this is worth their time and what the person actually thinks.
@@ -223,5 +235,8 @@ async function summarizeChunk(transcript: string, system: string): Promise<strin
     messages: [{ role: 'user', content: transcript }],
   });
   recordUsage(model, message.usage.input_tokens, message.usage.output_tokens);
-  return message.content[0].type === 'text' ? message.content[0].text : '';
+  const text = responseText(message);
+  // Fail loudly here: an empty summary saved quietly is what hid this for days.
+  if (!text) throw new Error(`summary came back with no text (stop_reason: ${message.stop_reason})`);
+  return text;
 }
