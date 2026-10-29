@@ -8,6 +8,7 @@ import remarkGfm from 'remark-gfm';
 import type { LeaderboardEntry } from '@/app/api/leaderboard/route';
 import { ETORO_SNAPSHOTS } from '@/lib/etoro';
 import { CHANNELS } from '@/lib/channels';
+import { itemKind, type ItemKind } from '@/lib/item-kind';
 import type { VideoUrl } from '@/app/api/videos/route';
 import type { DigestVideo } from '@/app/api/digest/route';
 import type { ChannelToggle } from '@/app/api/channels/route';
@@ -125,6 +126,19 @@ async function fetchDisabledChannels(): Promise<Set<string>> {
   const res = await fetch('/api/channels');
   const data: ChannelToggle[] = await res.json();
   return new Set(data.filter(c => !c.enabled).map(c => c.channelId));
+}
+
+const KIND_STYLES: Record<ItemKind, string> = {
+  YouTube: 'bg-red-50 text-red-700 border-red-200',
+  Substack: 'bg-orange-50 text-orange-700 border-orange-200',
+  Pasted: 'bg-gray-50 text-gray-600 border-gray-200',
+};
+
+/** Small label saying whether an item came from YouTube, Substack or the paste box. */
+function KindBadge({ kind }: { kind: ItemKind }) {
+  return (
+    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border shrink-0 ${KIND_STYLES[kind]}`}>{kind}</span>
+  );
 }
 
 export default function Page() {
@@ -556,7 +570,10 @@ export default function Page() {
                     <div key={v.video_id} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
                       <div className="px-5 py-4 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setDigestExpanded(isOpen ? null : v.video_id)}>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-xs font-semibold text-blue-600">{v.channel_name}</span>
+                          <span className="flex items-center gap-2 min-w-0">
+                            <span className="text-xs font-semibold text-blue-600">{v.channel_name}</span>
+                            <KindBadge kind={itemKind(v.channel_name, v.video_id)} />
+                          </span>
                           <span className="text-xs text-gray-400">{v.published_at.slice(0, 10)}</span>
                         </div>
                         <div className="flex items-start gap-2 mt-1">
@@ -745,7 +762,10 @@ export default function Page() {
                           </div>
                           {entry.details.map((d, j) => (
                             <div key={j} className="grid grid-cols-[160px_1fr_auto_auto] gap-x-4 items-start py-3 border-b border-slate-100 last:border-0">
-                              <span className="text-gray-800 font-semibold text-sm truncate pt-0.5">{d.channel_name}</span>
+                              <span className="flex flex-col items-start gap-1 min-w-0 pt-0.5">
+                                <span className="text-gray-800 font-semibold text-sm truncate max-w-full">{d.channel_name}</span>
+                                <KindBadge kind={itemKind(d.channel_name, d.video_id)} />
+                              </span>
                               <div className="flex flex-col gap-0.5 min-w-0">
                                 <span className="text-gray-700 text-sm font-medium truncate">{d.video_title}</span>
                                 <span className="text-gray-400 text-[11px]">Fetched {formatFetchedAt(d.fetched_at)}</span>
