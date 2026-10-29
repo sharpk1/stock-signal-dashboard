@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       days:
-        description: 'How many days back to fill in (1-7)'
+        description: 'How many days back to fill in (1-30)'
         required: false
         default: '2'
 

@@ -7,7 +7,7 @@ export const maxDuration = 300;
 
 /** Stop starting new summaries after this, so the route finishes inside maxDuration. */
 const TIME_BUDGET_MS = 240_000;
-const MAX_DAYS = 7;
+const MAX_DAYS = 30;
 
 // One-off repair for items saved while summaries came back empty (Sonnet 5.5's
 // leading thinking block). The fetch skips those as already processed, so this
