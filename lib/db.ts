@@ -204,6 +204,12 @@ export async function recordSourceRun(db: Client, run: SourceRun): Promise<void>
   });
 }
 
+/** When any source last ran, scheduled or manual. Drives the Fetch Latest cooldown. */
+export async function getLastRunAt(db: Client): Promise<string | null> {
+  const row = (await db.execute('SELECT MAX(ran_at) AS last FROM source_runs')).rows[0];
+  return (row?.last as string | null | undefined) ?? null;
+}
+
 /**
  * Last successful pull and last error per source. The two are looked up
  * independently on purpose: a source that failed an hour ago should still show

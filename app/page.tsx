@@ -133,6 +133,7 @@ export default function Page() {
   const [fetching, setFetching] = useState(false);
   const [lastFetched, setLastFetched] = useState<string | null>(null);
   const [fetchResult, setFetchResult] = useState<{ videosProcessed: number; tickersFound: number; errors: string[] } | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [disabledChannels, setDisabledChannels] = useState<Set<string> | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
@@ -277,9 +278,15 @@ export default function Page() {
   async function handleFetch() {
     setFetching(true);
     setFetchResult(null);
+    setFetchError(null);
     try {
       const res = await fetch('/api/fetch', { method: 'POST' });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      // An error body has no counts to show (cooldown, 500), so it gets its own banner.
+      if (!res.ok) {
+        setFetchError(data.error ?? `Fetch failed (${res.status})`);
+        return;
+      }
       setFetchResult(data);
       setLastFetched(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
       await Promise.all([loadLeaderboard(leaderboardDays), loadDigest(digestDays)]);
@@ -399,6 +406,12 @@ export default function Page() {
 
       <main className="max-w-6xl mx-auto px-6 py-8">
         {/* Fetch result banner */}
+        {fetchError && (
+          <div className="mb-5 flex items-start gap-3 p-4 rounded-xl bg-white border border-gray-200 shadow-sm text-sm">
+            <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+            <span className="text-gray-700">{fetchError}</span>
+          </div>
+        )}
         {fetchResult && (
           <div className="mb-5 flex items-start gap-3 p-4 rounded-xl bg-white border border-gray-200 shadow-sm text-sm">
             <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
