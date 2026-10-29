@@ -3,7 +3,8 @@ import { createClient, type Client } from '@libsql/client';
 import { initDb, saveChannel, saveVideo, saveMention, getLeaderboard, getMentionDetails,
          updateVideoTranscript, saveMemory, getMemories, saveConversation, getRecentConversations,
          getDisabledChannelIds, setChannelEnabled,
-         recordSourceRun, getSourceStatuses, getSourceAlertStates, savePastedItem } from '@/lib/db';
+         recordSourceRun, getSourceStatuses, getSourceAlertStates, savePastedItem,
+         getVideosMissingSummary, updateVideoSummary } from '@/lib/db';
 
 async function makeTestDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -380,5 +381,34 @@ describe('savePastedItem', () => {
     const row = (await db.execute({ sql: 'SELECT item_type FROM videos WHERE video_id = ?', args: ['yt1'] }))
       .rows[0] as unknown as { item_type: string | null };
     expect(row.item_type).toBeNull();
+  });
+});
+
+describe('getVideosMissingSummary', () => {
+  async function seed(db: Client, videoId: string, publishedAt: string, transcript: string | null, summary: string | null) {
+    const id = await saveVideo(db, { videoId, channelId: 'UC123', title: videoId, publishedAt });
+    await db.execute({ sql: 'UPDATE videos SET transcript = ?, summary = ? WHERE id = ?', args: [transcript, summary, id] });
+    return id;
+  }
+  const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+
+  it('returns recent items with a transcript and no summary, oldest first', async () => {
+    const db = await makeTestDb();
+    await seed(db, 'newer', daysAgo(0.5), 'text', '');
+    await seed(db, 'older', daysAgo(1), 'text', null);
+    await seed(db, 'has-summary', daysAgo(1), 'text', 'done');
+    await seed(db, 'no-transcript', daysAgo(1), null, null);
+    await seed(db, 'too-old', daysAgo(5), 'text', '');
+
+    const rows = await getVideosMissingSummary(db, 2);
+
+    expect(rows.map(r => r.title)).toEqual(['older', 'newer']);
+  });
+
+  it('drops an item once its summary is filled in', async () => {
+    const db = await makeTestDb();
+    const id = await seed(db, 'v1', daysAgo(1), 'text', '');
+    await updateVideoSummary(db, id, 'filled');
+    expect(await getVideosMissingSummary(db, 2)).toEqual([]);
   });
 });

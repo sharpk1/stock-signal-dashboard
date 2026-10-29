@@ -535,6 +535,37 @@ export async function savePastedItem(
   return { videoRowId: Number(result.lastInsertRowid), isNew: true };
 }
 
+export interface VideoMissingSummary {
+  id: number;
+  channelId: string;
+  title: string;
+  transcript: string;
+}
+
+/**
+ * Items published in the last `days` days that have a transcript but no
+ * summary, oldest first — so each one's "What changed" compares against the
+ * item before it, which the backfill may have just filled in.
+ */
+export async function getVideosMissingSummary(db: Client, days: number): Promise<VideoMissingSummary[]> {
+  const rows = (await db.execute({
+    sql: `
+      SELECT id, channel_id, title, transcript FROM videos
+      WHERE transcript IS NOT NULL AND transcript != ''
+        AND (summary IS NULL OR summary = '')
+        AND published_at >= date('now', ?)
+      ORDER BY published_at ASC, id ASC
+    `,
+    args: [`-${days} days`],
+  })).rows as unknown as { id: number; channel_id: string; title: string; transcript: string }[];
+  return rows.map(r => ({ id: Number(r.id), channelId: r.channel_id, title: r.title, transcript: r.transcript }));
+}
+
+/** Sets only the summary, leaving the stored transcript alone. */
+export async function updateVideoSummary(db: Client, videoRowId: number, summary: string): Promise<void> {
+  await db.execute({ sql: 'UPDATE videos SET summary = ? WHERE id = ?', args: [summary, videoRowId] });
+}
+
 export async function updateVideoTranscript(
   db: Client,
   videoRowId: number,
