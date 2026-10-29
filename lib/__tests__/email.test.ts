@@ -1,11 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { alertRecipients, digestRecipients } from '@/lib/email';
+import { alertRecipients, digestRecipients, digestEnabled } from '@/lib/email';
 
 const original = { ...process.env };
 afterEach(() => {
   process.env.ALERT_EMAILS = original.ALERT_EMAILS;
   process.env.NOTIFY_EMAIL = original.NOTIFY_EMAIL;
   process.env.DIGEST_EMAILS = original.DIGEST_EMAILS;
+  process.env.DIGEST_ENABLED = original.DIGEST_ENABLED;
 });
 
 describe('alertRecipients', () => {
@@ -47,5 +48,24 @@ describe('digestRecipients', () => {
   it('reads its own comma-separated list', () => {
     process.env.DIGEST_EMAILS = 'ray@example.com, kush@altiro.io';
     expect(digestRecipients()).toEqual(['ray@example.com', 'kush@altiro.io']);
+  });
+});
+
+describe('digestEnabled', () => {
+  it('is off when unset', () => {
+    delete process.env.DIGEST_ENABLED;
+    expect(digestEnabled()).toBe(false);
+  });
+
+  it('is off for anything but "true"', () => {
+    process.env.DIGEST_ENABLED = 'false';
+    expect(digestEnabled()).toBe(false);
+    process.env.DIGEST_ENABLED = '1';
+    expect(digestEnabled()).toBe(false);
+  });
+
+  it('is on for "true", ignoring case and spaces', () => {
+    process.env.DIGEST_ENABLED = ' TRUE ';
+    expect(digestEnabled()).toBe(true);
   });
 });

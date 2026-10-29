@@ -95,11 +95,20 @@ export function digestRecipients(): string[] {
   return [...new Set(raw.split(',').map(address => address.trim()).filter(Boolean))];
 }
 
+/** The summary is off unless DIGEST_ENABLED is "true", so recipients can be set ahead of turning it on. */
+export function digestEnabled(): boolean {
+  return process.env.DIGEST_ENABLED?.trim().toLowerCase() === 'true';
+}
+
 /**
  * The daily summary, to DIGEST_EMAILS. Returns false rather than throwing when
- * email isn't configured.
+ * it's switched off or email isn't configured.
  */
 export async function sendDailyDigestEmail(content: DigestContent): Promise<boolean> {
+  if (!digestEnabled()) {
+    console.log('[digest] not sent — DIGEST_ENABLED is not "true"');
+    return false;
+  }
   const token = process.env.POSTMARK_SERVER_TOKEN;
   const from = process.env.EMAIL_FROM;
   const to = digestRecipients();
