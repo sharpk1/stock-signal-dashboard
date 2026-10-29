@@ -47,6 +47,24 @@ export function feedPlaylistId(channelId: string, feed: ChannelFeed): string {
   return `${FEED_PLAYLIST_PREFIX[feed]}${channelId.slice(2)}`;
 }
 
+/**
+ * The `UU…` uploads playlist — every upload of every type, the same set the
+ * channel-wide RSS feed carries. Used for a channel with no pinned feed.
+ */
+export function uploadsPlaylistId(channelId: string): string {
+  if (!channelId.startsWith('UC')) {
+    throw new Error(`cannot derive an uploads playlist from channel id "${channelId}" (expected a UC… id)`);
+  }
+  return `UU${channelId.slice(2)}`;
+}
+
+/** The playlist that mirrors whatever `channelFeedUrl` would ask RSS for. */
+export function channelPlaylistId(channel: Channel): string {
+  return channel.feed
+    ? feedPlaylistId(channel.channelId, channel.feed)
+    : uploadsPlaylistId(channel.channelId);
+}
+
 export function channelFeedUrl(channel: Channel): string {
   if (channel.feed) {
     return `https://www.youtube.com/feeds/videos.xml?playlist_id=${feedPlaylistId(channel.channelId, channel.feed)}`;
@@ -74,16 +92,134 @@ export function parseRssFeed(xml: string): RssVideo[] {
   }));
 }
 
+/**
+ * How far back a pull reaches. The window and the log line that reports it read
+ * from the same constant on purpose — they drifted apart once already (the log
+ * claimed 3 days while the cutoff was 30).
+ */
+const FETCH_WINDOW_DAYS = 30;
+
+function withinWindow(videos: RssVideo[], now: number = Date.now()): RssVideo[] {
+  const cutoff = now - FETCH_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  return videos.filter(v => new Date(v.publishedAt).getTime() >= cutoff);
+}
+
+/** Which of the two upload listings a pull actually came from. */
+export type VideoSource = 'rss' | 'api';
+
+export interface RecentVideos {
+  videos: RssVideo[];
+  via: VideoSource;
+}
+
+const SOURCE_LABEL: Record<VideoSource, string> = {
+  rss: 'RSS',
+  api: 'YouTube Data API',
+};
+
+const PLAYLIST_ITEMS_ENDPOINT = 'https://www.googleapis.com/youtube/v3/playlistItems';
+
+/** Matches the RSS feeds, which carry 15 entries. */
+const API_MAX_RESULTS = 15;
+
+interface PlaylistItemsBody {
+  items?: Array<{
+    snippet?: { title?: string; publishedAt?: string };
+    contentDetails?: { videoId?: string; videoPublishedAt?: string };
+  }>;
+  error?: { message?: string };
+}
+
+/**
+ * `playlistItems` carries the publish date twice: `snippet.publishedAt` is when
+ * the video was added to the playlist, `contentDetails.videoPublishedAt` when
+ * the video itself went public. The latter is what RSS reports, so prefer it.
+ */
+export function parsePlaylistItems(body: PlaylistItemsBody): RssVideo[] {
+  return (body.items ?? [])
+    .map(item => ({
+      videoId: item.contentDetails?.videoId ?? '',
+      title: item.snippet?.title ?? '',
+      publishedAt: item.contentDetails?.videoPublishedAt ?? item.snippet?.publishedAt ?? '',
+    }))
+    .filter(v => v.videoId);
+}
+
+/**
+ * The key travels in the query string, so the URL must never reach an error
+ * message or a log line — errors name the playlist instead. Some fetch
+ * implementations put the failing URL in their own message, so anything on its
+ * way out of here gets the key stripped as a backstop.
+ */
+async function fetchViaDataApi(channel: Channel, apiKey: string): Promise<RssVideo[]> {
+  const playlistId = channelPlaylistId(channel);
+  const url =
+    `${PLAYLIST_ITEMS_ENDPOINT}?part=snippet,contentDetails&maxResults=${API_MAX_RESULTS}` +
+    `&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(apiKey)}`;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    const body = (await res.json().catch(() => null)) as PlaylistItemsBody | null;
+    if (!res.ok) {
+      throw new Error(`playlistItems ${playlistId}: ${body?.error?.message ?? `HTTP ${res.status}`}`);
+    }
+    return parsePlaylistItems(body ?? {});
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(redactKey(message, apiKey));
+  }
+}
+
+function redactKey(message: string, apiKey: string): string {
+  return apiKey ? message.split(apiKey).join('[redacted]') : message;
+}
+
+/**
+ * Recent uploads for a channel, and which listing they came from.
+ *
+ * YouTube's public RSS feed goes down for everyone every so often — 404/500 on
+ * every channel, Google's own included (2021, 2024, Dec 2025, Feb 2026, and
+ * again 2026-10-29, when it returned 0 videos across all channels). The Data
+ * API serves the same system playlists and stays up through those outages, so
+ * it backs the feed up rather than replacing it: RSS costs no quota, so it
+ * stays the primary.
+ *
+ * With no `YOUTUBE_API_KEY` configured there is nothing to fall back to, so the
+ * RSS failure propagates unchanged.
+ */
+export async function fetchRecentVideosWithSource(channel: Channel): Promise<RecentVideos> {
+  const report = (videos: RssVideo[], via: VideoSource): RecentVideos => {
+    console.log(
+      `[${channel.name}] ${videos.length} new video(s) in last ${FETCH_WINDOW_DAYS} days ` +
+      `(via ${SOURCE_LABEL[via]})`,
+    );
+    return { videos, via };
+  };
+
+  let rssFailure: Error;
+  try {
+    const res = await fetch(channelFeedUrl(channel));
+    if (res.ok) return report(withinWindow(parseRssFeed(await res.text())), 'rss');
+    rssFailure = new Error(`RSS fetch failed for ${channel.handle}: ${res.status}`);
+  } catch (err) {
+    rssFailure = err instanceof Error ? err : new Error(String(err));
+  }
+
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) throw rssFailure;
+
+  console.warn(`[${channel.name}] ${rssFailure.message} — falling back to the YouTube Data API`);
+  try {
+    return report(withinWindow(await fetchViaDataApi(channel, apiKey)), 'api');
+  } catch (err) {
+    throw new Error(
+      `${rssFailure.message}; YouTube Data API fallback failed: ` +
+      `${err instanceof Error ? err.message : err}`,
+    );
+  }
+}
+
 export async function fetchRecentVideos(channel: Channel): Promise<RssVideo[]> {
-  const url = channelFeedUrl(channel);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`RSS fetch failed for ${channel.handle}: ${res.status}`);
-  const xml = await res.text();
-  const all = parseRssFeed(xml);
-  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-  const recent = all.filter(v => new Date(v.publishedAt).getTime() >= cutoff);
-  console.log(`[${channel.name}] ${recent.length} new video(s) in last 3 days`);
-  return recent;
+  return (await fetchRecentVideosWithSource(channel)).videos;
 }
 
 /**

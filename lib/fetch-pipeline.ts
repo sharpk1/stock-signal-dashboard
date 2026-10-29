@@ -1,6 +1,6 @@
 import { CHANNELS, Channel } from '@/lib/channels';
 import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert, bumpTranscriptAttempts, getDisabledChannelIds, recordSourceRun, getLatestChannelSummary } from '@/lib/db';
-import { fetchRecentVideos, fetchTranscript } from '@/lib/youtube';
+import { fetchRecentVideos, fetchRecentVideosWithSource, fetchTranscript, type VideoSource } from '@/lib/youtube';
 import { fetchSubstackPosts, extractSubstackContent, SubstackPost,
          cookieAgeWarning, emptyHarvestWarning, describeUnusablePost } from '@/lib/substack';
 import { extractTickers, generateSummary } from '@/lib/extract';
@@ -46,6 +46,12 @@ export interface FetchResult {
   newAlerts: string[];
   newVideos: NewVideo[];
   skippedChannels: string[];
+  /**
+   * Which listing each YouTube pull came from, by channel name. The RSS feed is
+   * the primary and the Data API the fallback, so a run showing `api` is a run
+   * that only worked because the feed was down — worth seeing in the summary.
+   */
+  fetchSources: Record<string, VideoSource>;
   usage: RunUsage;
 }
 
@@ -66,6 +72,7 @@ export async function runFetch(): Promise<FetchResult> {
   let timedOut = false;
   const disabled = await getDisabledChannelIds(db);
   const skippedChannels: string[] = [];
+  const fetchSources: Record<string, VideoSource> = {};
   resetUsage();
 
   for (const channel of CHANNELS) {
@@ -115,7 +122,9 @@ export async function runFetch(): Promise<FetchResult> {
         // The pull worked; check whether it actually brought anything back.
         warn(emptyHarvestWarning(videos as SubstackPost[]));
       } else {
-        videos = await fetchRecentVideos(channel);
+        const pulled = await fetchRecentVideosWithSource(channel);
+        fetchSources[channel.name] = pulled.via;
+        videos = pulled.videos;
       }
     } catch (err) {
       const msg = `${channel.name}: fetch failed — ${err instanceof Error ? err.message : err}`;
@@ -298,5 +307,5 @@ export async function runFetch(): Promise<FetchResult> {
     `about $${usage.estimatedCostUsd.toFixed(4)}${usage.partialCost ? '+ (some models unpriced)' : ''}`,
   );
 
-  return { success: true, timedOut, videosProcessed, tickersFound, errors, newAlerts, newVideos, skippedChannels, usage };
+  return { success: true, timedOut, videosProcessed, tickersFound, errors, newAlerts, newVideos, skippedChannels, fetchSources, usage };
 }
