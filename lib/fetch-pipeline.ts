@@ -7,6 +7,7 @@ import { extractTickers, generateSummary } from '@/lib/extract';
 import { resetUsage, getUsage, type RunUsage } from '@/lib/usage';
 import { getBudgetStatus } from '@/lib/claude';
 import { BudgetReachedError, type BudgetStatus } from '@/lib/budget';
+import { refreshAvatars } from '@/lib/avatars';
 
 const MAX_TRANSCRIPT_ATTEMPTS = 3; // give up on a video after this many failed runs
 const TIME_BUDGET_MS = 240_000;    // stop gracefully before Vercel's 300s hard limit
@@ -310,6 +311,11 @@ export async function runFetch(): Promise<FetchResult> {
 
     await recordRun(true);
   }
+
+  // Profile pictures for the Commentators cards. Weekly per channel, switched-off
+  // ones included (they still get a card), and it swallows its own failures.
+  // Skipped on a timed-out run so the time left goes to items.
+  if (!timedOut) await refreshAvatars(db, CHANNELS);
 
   // Detect new convergences and save alerts
   const newAlerts: string[] = [];

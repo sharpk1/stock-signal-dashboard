@@ -5,7 +5,8 @@ import { initDb, saveChannel, saveVideo, saveMention, getLeaderboard, getMention
          getDisabledChannelIds, setChannelEnabled,
          recordSourceRun, getSourceStatuses, getSourceAlertStates, savePastedItem,
          getVideosMissingSummary, updateVideoSummary,
-         recordAiSpend, getMonthSpend, getBudgetAlertsSent, markBudgetAlertsSent } from '@/lib/db';
+         recordAiSpend, getMonthSpend, getBudgetAlertsSent, markBudgetAlertsSent,
+         getCommentatorCounts, getAvatarStates, saveAvatar } from '@/lib/db';
 
 async function makeTestDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -440,5 +441,41 @@ describe('budget alerts sent', () => {
     await markBudgetAlertsSent(db, '2026-10', [80, 100]);
     expect(await getBudgetAlertsSent(db, '2026-10')).toEqual(new Set([80, 100]));
     expect(await getBudgetAlertsSent(db, '2026-11')).toEqual(new Set());
+  });
+});
+
+describe('getCommentatorCounts', () => {
+  const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+
+  it('counts items and per-ticker items inside the window only', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, { id: 1, channelId: 'UC1', handle: '@a', name: 'A', weight: 0.1 });
+    const v1 = await saveVideo(db, { videoId: 'v1', channelId: 'UC1', title: 't1', publishedAt: daysAgo(1) });
+    const v2 = await saveVideo(db, { videoId: 'v2', channelId: 'UC1', title: 't2', publishedAt: daysAgo(3) });
+    const old = await saveVideo(db, { videoId: 'v3', channelId: 'UC1', title: 't3', publishedAt: daysAgo(20) });
+    for (const [id, ticker] of [[v1, 'NVDA'], [v2, 'NVDA'], [v2, 'AMD'], [old, 'TSLA']] as const) {
+      await saveMention(db, { videoRowId: id, ticker, company: null, sentiment: 'bullish', conviction: 50, quote: null });
+    }
+
+    const week = await getCommentatorCounts(db, 7);
+    expect(week.pieces.get('UC1')).toBe(2);
+    expect(week.tickers.sort((a, b) => a.ticker.localeCompare(b.ticker))).toEqual([
+      { channelId: 'UC1', ticker: 'AMD', count: 1 },
+      { channelId: 'UC1', ticker: 'NVDA', count: 2 },
+    ]);
+
+    const month = await getCommentatorCounts(db, 30);
+    expect(month.pieces.get('UC1')).toBe(3);
+  });
+
+  it('round-trips the avatar and its checked stamp', async () => {
+    const db = await makeTestDb();
+    await saveChannel(db, { id: 1, channelId: 'UC1', handle: '@a', name: 'A', weight: 0.1 });
+    expect((await getAvatarStates(db)).get('UC1')).toBeNull();
+    expect((await getCommentatorCounts(db, 7)).avatars.get('UC1')).toBeNull();
+
+    await saveAvatar(db, 'UC1', 'https://yt3.ggpht.com/a.jpg');
+    expect((await getAvatarStates(db)).get('UC1')).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect((await getCommentatorCounts(db, 7)).avatars.get('UC1')).toBe('https://yt3.ggpht.com/a.jpg');
   });
 });
