@@ -17,4 +17,14 @@ describe('itemKind', () => {
   it('falls back to YouTube for a channel it does not know', () => {
     expect(itemKind('Someone New', 'abc123')).toBe('YouTube');
   });
+
+  it('splits Substack posts into video and article once the fetch has labelled them', () => {
+    expect(itemKind('Robert Reynolds', 'anthropics-s-1-ai-demand', 'video')).toBe('Substack video');
+    expect(itemKind('Robert Reynolds', 'the-us-disinflation-outlook', 'article')).toBe('Substack article');
+    expect(itemKind('Robert Reynolds', 'not-labelled-yet', null)).toBe('Substack');
+  });
+
+  it('ignores media on a YouTube channel', () => {
+    expect(itemKind('Meet Kevin', 'dQw4w9WgXcQ', 'article')).toBe('YouTube');
+  });
 });

@@ -9,6 +9,8 @@ export interface DigestVideo {
   channel_id: string;
   published_at: string;
   summary: string | null;
+  /** Substack posts: 'video' or 'article'; null otherwise. */
+  media: string | null;
   url: string;
   mentions: { ticker: string; sentiment: string; conviction: number }[];
 }
@@ -26,7 +28,7 @@ export async function GET(request: Request) {
 
   const rows = (await db.execute({
     sql: `
-      SELECT v.video_id, v.title, v.published_at, v.summary, c.name AS channel_name, c.channel_id
+      SELECT v.video_id, v.title, v.published_at, v.summary, v.media, c.name AS channel_name, c.channel_id
       FROM videos v
       JOIN channels c ON v.channel_id = c.channel_id
       WHERE (rtrim(replace(v.published_at, 'T', ' '), 'Z') >= datetime('now', '-' || ? || ' days') OR v.pinned = 1)

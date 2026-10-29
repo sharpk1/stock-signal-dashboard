@@ -175,6 +175,8 @@ function CommentatorCard({ c }: { c: Commentator }) {
 
 const KIND_STYLES: Record<ItemKind, string> = {
   YouTube: 'bg-red-50 text-red-700 border-red-200',
+  'Substack video': 'bg-orange-50 text-orange-700 border-orange-200',
+  'Substack article': 'bg-orange-50 text-orange-700 border-orange-200',
   Substack: 'bg-orange-50 text-orange-700 border-orange-200',
   Pasted: 'bg-gray-50 text-gray-600 border-gray-200',
 };
@@ -603,7 +605,7 @@ export default function Page() {
                         <div className="flex items-center justify-between gap-3">
                           <span className="flex items-center gap-2 min-w-0">
                             <span className="text-xs font-semibold text-blue-600">{v.channel_name}</span>
-                            <KindBadge kind={itemKind(v.channel_name, v.video_id)} />
+                            <KindBadge kind={itemKind(v.channel_name, v.video_id, v.media)} />
                           </span>
                           <span className="text-xs text-gray-400">{v.published_at.slice(0, 10)}</span>
                         </div>

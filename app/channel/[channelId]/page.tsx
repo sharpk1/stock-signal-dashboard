@@ -10,6 +10,7 @@ import { ETORO_SNAPSHOTS, type EtoroSnapshot } from '@/lib/etoro';
 import { PASTE_TYPE_LABELS, isPasteType } from '@/lib/paste';
 import { TranscriptPanel } from '@/app/components/TranscriptPanel';
 import type { ChannelVideo } from '@/app/api/videos/route';
+import { itemKind, type ItemKind } from '@/lib/item-kind';
 import type { ChatSource } from '@/app/api/chat/route';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
 
@@ -88,6 +89,19 @@ function SentimentBadge({ sentiment }: { sentiment: string }) {
       {sentiment}
     </span>
   );
+}
+
+const MEDIA_STYLES: Record<ItemKind, string> = {
+  YouTube: 'bg-red-50 text-red-700 border-red-200',
+  'Substack video': 'bg-orange-50 text-orange-700 border-orange-200',
+  'Substack article': 'bg-amber-50 text-amber-800 border-amber-200',
+  Substack: 'bg-orange-50 text-orange-700 border-orange-200',
+  Pasted: 'bg-gray-50 text-gray-600 border-gray-200',
+};
+
+/** Whether an item is a YouTube video, or a Substack video or article. */
+function MediaLabel({ kind }: { kind: ItemKind }) {
+  return <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${MEDIA_STYLES[kind]}`}>{kind}</span>;
 }
 
 export default function ChannelPage() {
@@ -287,7 +301,10 @@ export default function ChannelPage() {
                         )}
                         {isPinned && <span className="text-xs text-amber-600 font-medium">📌 pinned</span>}
                       </div>
-                      <p className="text-xs text-gray-400 mt-0.5">{video.published_at.slice(0, 10)}</p>
+                      <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+                        {video.published_at.slice(0, 10)}
+                        {!video.item_type && <MediaLabel kind={itemKind(video.channel_name, video.video_id, video.media)} />}
+                      </p>
                       {video.mentions.length > 0 && !isExpanded && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {video.mentions.slice(0, 5).map((m, i) => (
