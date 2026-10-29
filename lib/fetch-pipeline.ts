@@ -1,5 +1,5 @@
 import { CHANNELS, Channel } from '@/lib/channels';
-import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert, bumpTranscriptAttempts, getDisabledChannelIds } from '@/lib/db';
+import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert, bumpTranscriptAttempts, getDisabledChannelIds, recordSourceRun } from '@/lib/db';
 import { fetchRecentVideos, fetchTranscript } from '@/lib/youtube';
 import { fetchSubstackPosts, extractSubstackContent, SubstackPost } from '@/lib/substack';
 import { extractTickers, generateSummary } from '@/lib/extract';
@@ -76,6 +76,22 @@ export async function runFetch(): Promise<FetchResult> {
       continue;
     }
 
+    // Log one row per source per run for the status page. Every message this
+    // channel adds to `errors` is prefixed with its name, so slicing from here
+    // and matching that prefix picks out exactly its own problems — the shared
+    // time-budget notice stays out of it.
+    const errorStart = errors.length;
+    let channelItems = 0;
+    const recordRun = async (success: boolean) => {
+      const own = errors.slice(errorStart).filter(e => e.startsWith(channel.name));
+      await recordSourceRun(db, {
+        channelId: channel.channelId,
+        success,
+        items: channelItems,
+        error: own.length > 0 ? own.join('; ').slice(0, 1000) : null,
+      });
+    };
+
     let videos: Array<SubstackPost | Awaited<ReturnType<typeof fetchRecentVideos>>[number]>;
     try {
       if (channel.source === 'substack') {
@@ -87,11 +103,14 @@ export async function runFetch(): Promise<FetchResult> {
       const msg = `${channel.name}: fetch failed — ${err instanceof Error ? err.message : err}`;
       errors.push(msg);
       console.error(msg);
+      await recordRun(false);
       continue;
     }
 
     if (videos.length === 0) {
       console.log(`${channel.name}: no new videos in window`);
+      // The pull itself worked; there was simply nothing new.
+      await recordRun(true);
       continue;
     }
 
@@ -213,6 +232,7 @@ export async function runFetch(): Promise<FetchResult> {
       }
 
       videosProcessed++;
+      channelItems++;
       if (isFreshContent) {
         newVideos.push({
           title: video.title,
@@ -223,6 +243,8 @@ export async function runFetch(): Promise<FetchResult> {
       }
       console.log(`Processed: ${video.title} — ${mentions.length} tickers`);
     }
+
+    await recordRun(true);
   }
 
   // Detect new convergences and save alerts
