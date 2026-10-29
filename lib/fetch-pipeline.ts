@@ -1,8 +1,9 @@
 import { CHANNELS, Channel } from '@/lib/channels';
-import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert, bumpTranscriptAttempts, getDisabledChannelIds, recordSourceRun } from '@/lib/db';
+import { getDb, saveChannel, saveVideo, saveMention, updateVideoTranscript, getLeaderboard, saveConvergenceAlert, bumpTranscriptAttempts, getDisabledChannelIds, recordSourceRun, getLatestChannelSummary } from '@/lib/db';
 import { fetchRecentVideos, fetchTranscript } from '@/lib/youtube';
 import { fetchSubstackPosts, extractSubstackContent, SubstackPost } from '@/lib/substack';
 import { extractTickers, generateSummary } from '@/lib/extract';
+import { resetUsage, getUsage, type RunUsage } from '@/lib/usage';
 
 const MAX_TRANSCRIPT_ATTEMPTS = 3; // give up on a video after this many failed runs
 const TIME_BUDGET_MS = 240_000;    // stop gracefully before Vercel's 300s hard limit
@@ -44,6 +45,7 @@ export interface FetchResult {
   newAlerts: string[];
   newVideos: NewVideo[];
   skippedChannels: string[];
+  usage: RunUsage;
 }
 
 function videoUrl(channel: Channel, videoId: string): string {
@@ -63,6 +65,7 @@ export async function runFetch(): Promise<FetchResult> {
   let timedOut = false;
   const disabled = await getDisabledChannelIds(db);
   const skippedChannels: string[] = [];
+  resetUsage();
 
   for (const channel of CHANNELS) {
     if (timedOut) break;
@@ -201,7 +204,9 @@ export async function runFetch(): Promise<FetchResult> {
 
         let summary = '';
         try {
-          summary = await generateSummary(transcript);
+          // What this person said last time, so the summary can say what moved.
+          const previousSummary = await getLatestChannelSummary(db, channel.channelId, videoRowId);
+          summary = await generateSummary(transcript, previousSummary);
         } catch (err) {
           console.error(`${channel.name} / ${video.title}: summary generation failed — ${err instanceof Error ? err.message : err}`);
         }
@@ -271,5 +276,11 @@ export async function runFetch(): Promise<FetchResult> {
     }
   }
 
-  return { success: true, timedOut, videosProcessed, tickersFound, errors, newAlerts, newVideos, skippedChannels };
+  const usage = getUsage();
+  console.log(
+    `Run used ${usage.calls} Claude call(s): ${usage.inputTokens} in / ${usage.outputTokens} out, ` +
+    `about $${usage.estimatedCostUsd.toFixed(4)}${usage.partialCost ? '+ (some models unpriced)' : ''}`,
+  );
+
+  return { success: true, timedOut, videosProcessed, tickersFound, errors, newAlerts, newVideos, skippedChannels, usage };
 }

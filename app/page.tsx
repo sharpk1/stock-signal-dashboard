@@ -11,6 +11,7 @@ import { CHANNELS } from '@/lib/channels';
 import type { VideoUrl } from '@/app/api/videos/route';
 import type { DigestVideo } from '@/app/api/digest/route';
 import type { ChannelToggle } from '@/app/api/channels/route';
+import type { ChatSource } from '@/app/api/chat/route';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
@@ -133,7 +134,7 @@ export default function Page() {
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [modalQuote, setModalQuote] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string; sources?: ChatSource[] }[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -260,8 +261,12 @@ export default function Page() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question }),
       });
-      const data = await res.json() as { answer?: string };
-      setChatMessages(prev => [...prev, { role: 'assistant', content: data.answer ?? 'Something went wrong. Please try again.' }]);
+      const data = await res.json() as { answer?: string; sources?: ChatSource[] };
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: data.answer ?? 'Something went wrong. Please try again.',
+        sources: data.sources,
+      }]);
     } finally {
       setChatLoading(false);
     }
@@ -816,6 +821,26 @@ export default function Page() {
                   >
                     {m.content}
                   </ReactMarkdown>
+                )}
+                {m.role === 'assistant' && m.sources && m.sources.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-gray-300">
+                    <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Sources</div>
+                    <ul className="space-y-0.5">
+                      {m.sources.map(s => (
+                        <li key={s.label}>
+                          <a
+                            href={s.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:underline break-words"
+                          >
+                            [{s.label}] {s.channelName} — {s.title}
+                          </a>
+                          <span className="text-[11px] text-gray-400"> · {s.publishedAt}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
             </div>
