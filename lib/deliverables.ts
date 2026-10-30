@@ -13,6 +13,7 @@ export interface Deliverable {
   doneWhen: string;
   ticketId: string | null;
   status: DeliverableStatus;
+  waitingOn: string | null;   // Ray's next step when the ticket is blocked on him
   signedOffBy: string | null;
   signedOffAt: string | null;
   sortOrder: number;
@@ -25,6 +26,7 @@ export interface DeliverableInput {
   doneWhen: string;
   ticketId: string | null;
   status: DeliverableStatus;
+  waitingOn: string | null;
 }
 
 export async function initDeliverables(db: Client): Promise<void> {
@@ -51,6 +53,11 @@ export async function initDeliverables(db: Client): Promise<void> {
       ticket_commented INTEGER NOT NULL DEFAULT 0
     );
   `);
+  try {
+    await db.execute('ALTER TABLE deliverables ADD COLUMN waiting_on TEXT');
+  } catch {
+    /* column already exists */
+  }
 }
 
 // "A1" -> part "A", order 1; "B10" -> part "B", order 110.
@@ -64,28 +71,29 @@ export function parseCode(code: string): { part: string; sortOrder: number } {
 export async function upsertDeliverable(db: Client, d: DeliverableInput): Promise<void> {
   await db.execute({
     sql: `
-      INSERT INTO deliverables (code, phase, title, done_when, ticket_id, status)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO deliverables (code, phase, title, done_when, ticket_id, status, waiting_on)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(code) DO UPDATE SET
         phase = excluded.phase,
         title = excluded.title,
         done_when = excluded.done_when,
         ticket_id = excluded.ticket_id,
         status = excluded.status,
+        waiting_on = excluded.waiting_on,
         updated_at = datetime('now')
     `,
-    args: [d.code, d.phase, d.title, d.doneWhen, d.ticketId, d.status],
+    args: [d.code, d.phase, d.title, d.doneWhen, d.ticketId, d.status, d.waitingOn],
   });
 }
 
 export async function listDeliverables(db: Client, phase = 'Phase 1'): Promise<Deliverable[]> {
   const rows = (await db.execute({
-    sql: `SELECT code, phase, title, done_when, ticket_id, status, signed_off_by, signed_off_at
+    sql: `SELECT code, phase, title, done_when, ticket_id, status, waiting_on, signed_off_by, signed_off_at
           FROM deliverables WHERE phase = ?`,
     args: [phase],
   })).rows as unknown as {
     code: string; phase: string; title: string; done_when: string; ticket_id: string | null;
-    status: DeliverableStatus; signed_off_by: string | null; signed_off_at: string | null;
+    status: DeliverableStatus; waiting_on: string | null; signed_off_by: string | null; signed_off_at: string | null;
   }[];
 
   return rows
@@ -96,6 +104,7 @@ export async function listDeliverables(db: Client, phase = 'Phase 1'): Promise<D
       doneWhen: r.done_when,
       ticketId: r.ticket_id,
       status: r.status,
+      waitingOn: r.waiting_on ?? null,
       signedOffBy: r.signed_off_by,
       signedOffAt: r.signed_off_at,
       ...parseCode(r.code),
