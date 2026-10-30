@@ -13,7 +13,10 @@ const PART_TITLES: Record<string, string> = {
   C: 'Part C · Small upgrades',
 };
 
-function StatusBadge({ status }: { status: DeliverableStatus }) {
+function StatusBadge({ status, waiting }: { status: DeliverableStatus; waiting: boolean }) {
+  if (waiting) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap bg-violet-50 text-violet-800 border border-violet-200">Waiting on Ray</span>;
+  }
   const styles: Record<DeliverableStatus, [string, string]> = {
     not_started: ['bg-gray-100 text-gray-600 border border-gray-200', 'Not started'],
     in_progress: ['bg-amber-50 text-amber-800 border border-amber-200', 'In progress'],
@@ -68,6 +71,7 @@ export default function SignOffPage() {
 
   const signed = items.filter(i => i.signedOffAt).length;
   const delivered = items.filter(i => i.status === 'delivered').length;
+  const waiting = items.filter(i => i.waitingOn);
   const parts = [...new Set(items.map(i => i.part))];
 
   return (
@@ -115,6 +119,15 @@ export default function SignOffPage() {
         </div>
 
 
+        {waiting.length > 0 && (
+          <div className="bg-violet-50 border border-violet-200 rounded-xl px-5 py-4 text-sm text-violet-900">
+            <div className="font-semibold">Waiting on you, Ray</div>
+            <ul className="mt-1 list-disc pl-5 flex flex-col gap-0.5">
+              {waiting.map(i => <li key={i.code}><span className="font-mono text-xs font-bold">{i.code}</span> {i.waitingOn}</li>)}
+            </ul>
+          </div>
+        )}
+
         {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{error}</div>}
 
         {loading ? (
@@ -144,9 +157,12 @@ export default function SignOffPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-mono text-xs font-bold text-blue-600">{item.code}</span>
                         <span className="font-medium">{item.title}</span>
-                        <StatusBadge status={item.status} />
+                        <StatusBadge status={item.status} waiting={!!item.waitingOn} />
                       </div>
                       <div className="text-sm text-gray-500"><span className="text-gray-400">Done when:</span> {item.doneWhen}</div>
+                      {item.waitingOn && (
+                        <div className="text-sm text-violet-800"><span className="text-violet-500">Your step:</span> {item.waitingOn}</div>
+                      )}
                       {item.signedOffAt ? (
                         <div className="text-xs text-emerald-700">Signed off by {item.signedOffBy} · {formatDate(item.signedOffAt)}</div>
                       ) : !canSign && (

@@ -31,10 +31,20 @@ export function parseListLine(line: string): { id: string; state: string; code: 
   return m ? { id: m[1], state: m[2], code: m[3], title: m[4] } : null;
 }
 
-export function parseShow(text: string): { epic: string | null; doneWhen: string } {
+// A "**Waiting on Ray:** <his next step>" line in the body or any comment; the
+// latest one wins, so a newer comment can restate what's needed.
+export function parseShow(text: string): { epic: string | null; doneWhen: string; waitingOn: string | null } {
   const epic = /^epic: (.+?) · /m.exec(text)?.[1] ?? null;
   const doneWhen = /\*\*Done when:\*\*\s*(.+)/.exec(text)?.[1].trim() ?? '';
-  return { epic: epic === '-' ? null : epic, doneWhen };
+  const waits = [...text.matchAll(/\*\*Waiting on Ray:\*\*\s*(.+)/g)];
+  const waitingOn = waits.at(-1)?.[1].trim() || null;
+  return { epic: epic === '-' ? null : epic, doneWhen, waitingOn };
+}
+
+// Only a blocked ticket shows as waiting on Ray, so a stale line can't linger
+// after the ticket moves on.
+export function toWaitingOn(state: string, waitingOn: string | null): string | null {
+  return state === 'blocked' ? waitingOn ?? 'Waiting on Ray.' : null;
 }
 
 async function main() {
@@ -45,14 +55,17 @@ async function main() {
       .split('\n').map(parseListLine).filter(r => r !== null));
 
   const deliverables = rows.flatMap(r => {
-    const { epic, doneWhen } = parseShow(ticket('show', r.id));
+    const { epic, doneWhen, waitingOn } = parseShow(ticket('show', r.id));
     if (epic !== EPIC) return [];
-    return [{ code: r.code, phase: EPIC, title: r.title, doneWhen, ticketId: r.id, status: toStatus(r.state) }];
+    return [{
+      code: r.code, phase: EPIC, title: r.title, doneWhen, ticketId: r.id,
+      status: toStatus(r.state), waitingOn: toWaitingOn(r.state, waitingOn),
+    }];
   });
 
   const db = await getDb();
   for (const d of deliverables) {
-    console.log(`${d.code.padEnd(4)} ${d.ticketId.padEnd(7)} ${d.status.padEnd(12)} ${d.title}`);
+    console.log(`${d.code.padEnd(4)} ${d.ticketId.padEnd(7)} ${d.status.padEnd(12)} ${d.title}${d.waitingOn ? `  (waiting on Ray: ${d.waitingOn})` : ''}`);
     if (!dryRun) await upsertDeliverable(db, d);
   }
   console.log(`${dryRun ? 'Would sync' : 'Synced'} ${deliverables.length} deliverables.`);

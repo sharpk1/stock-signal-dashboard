@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { initDb } from '@/lib/db';
 import { upsertDeliverable, listDeliverables, setSignOff, pendingTicketComments, markTicketCommented, parseCode, SignOffError } from '@/lib/deliverables';
-import { parseListLine, parseShow, toStatus } from '@/scripts/sync-deliverables';
+import { parseListLine, parseShow, toStatus, toWaitingOn } from '@/scripts/sync-deliverables';
 
 async function makeTestDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -10,7 +10,7 @@ async function makeTestDb(): Promise<Client> {
   return db;
 }
 
-const base = { phase: 'Phase 1', doneWhen: 'It works', ticketId: 'RAY-2' };
+const base = { phase: 'Phase 1', doneWhen: 'It works', ticketId: 'RAY-2', waitingOn: null };
 
 describe('deliverables', () => {
   it('sorts A before B and B2 before B10', async () => {
@@ -58,7 +58,24 @@ describe('sync parsing', () => {
 
   it('parses epic and done-when from ticket show', () => {
     const text = 'RAY-2 ...\nepic: Phase 1 · kind: build · labels: ray · PR: -\n\nBody\n\n**Done when:** New items show summaries.\n';
-    expect(parseShow(text)).toEqual({ epic: 'Phase 1', doneWhen: 'New items show summaries.' });
+    expect(parseShow(text)).toEqual({ epic: 'Phase 1', doneWhen: 'New items show summaries.', waitingOn: null });
+  });
+
+  it('takes the latest "Waiting on Ray" line', () => {
+    const text = 'epic: Phase 1 · kind: build\n\n**Waiting on Ray:** Send the token.\n\n— claude-code\n**Waiting on Ray:** Use the setup link.\n';
+    expect(parseShow(text).waitingOn).toBe('Use the setup link.');
+  });
+
+  it('only shows waiting on Ray for blocked tickets', () => {
+    expect(toWaitingOn('blocked', 'Use the link.')).toBe('Use the link.');
+    expect(toWaitingOn('blocked', null)).toBe('Waiting on Ray.');
+    expect(toWaitingOn('done', 'Use the link.')).toBeNull();
+  });
+
+  it('round-trips waitingOn through the table', async () => {
+    const db = await makeTestDb();
+    await upsertDeliverable(db, { ...base, code: 'B7', title: 'X', status: 'in_progress', waitingOn: 'Use the link.' });
+    expect((await listDeliverables(db))[0].waitingOn).toBe('Use the link.');
   });
 
   it('maps ticket states to deliverable status', () => {
