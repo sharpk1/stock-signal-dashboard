@@ -4,8 +4,13 @@ export interface Channel {
   handle: string;
   name: string;
   weight: number;
-  source?: 'youtube' | 'substack';
+  source?: 'youtube' | 'substack' | 'x';
   substackHandle?: string;
+  /**
+   * X accounts only. These aren't in CHANNELS: Ray picks them on /setup/x and
+   * they live in the x_accounts table (see lib/x-store.ts).
+   */
+  xUserId?: string;
   /**
    * Which slice of a channel's uploads to pull. YouTube keeps a system playlist
    * per upload type, and a channel's main feed mixes all of them together with
