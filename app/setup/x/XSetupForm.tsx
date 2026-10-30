@@ -164,8 +164,8 @@ export function XSetupForm({ setupKey, expires }: { setupKey: string; expires: s
       <Step n={1} title="Get your token from X">
         <ol className="list-decimal pl-[52px] flex flex-col gap-2 text-sm leading-relaxed text-gray-700">
           <li>Sign in at <a href="https://console.x.com" target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-700">console.x.com</a> with your X account.</li>
-          <li>Set a monthly spending limit. About $20 is plenty, since we only fetch new posts.</li>
-          <li>Create an app and copy its <strong>Bearer Token</strong>.</li>
+          <li>Buy credits under <strong>Billing › Credits</strong>. About $10 is plenty to start, since we only fetch new posts. X charges per post read.</li>
+          <li>Open <strong>Apps</strong>, click your app, then under <strong>Keys &amp; Tokens</strong> click Generate next to <strong>Bearer Token</strong> and copy it. It&apos;s a long string starting with AAAA.</li>
         </ol>
       </Step>
 
