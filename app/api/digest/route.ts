@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { CHANNELS } from '@/lib/channels';
+import { itemUrl } from '@/lib/item-url';
 
 export interface DigestVideo {
   video_id: string;
@@ -13,12 +13,6 @@ export interface DigestVideo {
   media: string | null;
   url: string;
   mentions: { ticker: string; sentiment: string; conviction: number }[];
-}
-
-function videoUrl(channelId: string, videoId: string): string {
-  const ch = CHANNELS.find(c => c.channelId === channelId);
-  if (ch?.source === 'substack') return `https://${ch.substackHandle}.substack.com/p/${videoId}`;
-  return `https://youtube.com/watch?v=${videoId}`;
 }
 
 export async function GET(request: Request) {
@@ -51,7 +45,7 @@ export async function GET(request: Request) {
 
   const videos: DigestVideo[] = rows.map(r => ({
     ...r,
-    url: videoUrl(r.channel_id, r.video_id),
+    url: itemUrl(r.channel_id, r.video_id),
     mentions: byVideo[r.video_id] ?? [],
   }));
 

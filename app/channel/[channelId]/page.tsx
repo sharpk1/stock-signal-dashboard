@@ -12,6 +12,7 @@ import { TranscriptPanel } from '@/app/components/TranscriptPanel';
 import type { ChannelVideo } from '@/app/api/videos/route';
 import { itemKind, type ItemKind } from '@/lib/item-kind';
 import type { ChatSource } from '@/app/api/chat/route';
+import type { ChannelToggle } from '@/app/api/channels/route';
 import { PasswordProtection } from '@/app/components/PasswordProtection';
 
 function formatAsOf(asOf: string): string {
@@ -97,6 +98,7 @@ const MEDIA_STYLES: Record<ItemKind, string> = {
   'Substack article': 'bg-amber-50 text-amber-800 border-amber-200',
   Substack: 'bg-orange-50 text-orange-700 border-orange-200',
   Pasted: 'bg-gray-50 text-gray-600 border-gray-200',
+  X: 'bg-slate-100 text-slate-800 border-slate-300',
 };
 
 /** Whether an item is a YouTube video, or a Substack video or article. */
@@ -106,7 +108,18 @@ function MediaLabel({ kind }: { kind: ItemKind }) {
 
 export default function ChannelPage() {
   const { channelId } = useParams<{ channelId: string }>();
-  const channel = CHANNELS.find(c => c.channelId === channelId);
+  const configured = CHANNELS.find(c => c.channelId === channelId);
+  // X accounts aren't in CHANNELS (they're chosen on /setup/x), so look those
+  // up from /api/channels. `undefined` while that's in flight, null if unknown.
+  const [stored, setStored] = useState<ChannelToggle | null | undefined>(undefined);
+  useEffect(() => {
+    if (configured) return;
+    fetch('/api/channels')
+      .then(res => (res.ok ? res.json() : []))
+      .then((list: ChannelToggle[]) => setStored(list.find(c => c.channelId === channelId) ?? null))
+      .catch(() => setStored(null));
+  }, [configured, channelId]);
+  const channel = configured ?? stored;
   const etoroSnapshot = ETORO_SNAPSHOTS.find(s => s.channelId === channelId);
 
   const [videos, setVideos] = useState<ChannelVideo[]>([]);
@@ -206,6 +219,7 @@ export default function ChannelPage() {
   }
 
   if (!channel) {
+    if (stored === undefined) return <div className="min-h-screen bg-gray-50" />;
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">

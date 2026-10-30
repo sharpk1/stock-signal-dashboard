@@ -215,9 +215,10 @@ const KIND_STYLES: Record<ItemKind, string> = {
   'Substack article': 'bg-orange-50 text-orange-700 border-orange-200',
   Substack: 'bg-orange-50 text-orange-700 border-orange-200',
   Pasted: 'bg-gray-50 text-gray-600 border-gray-200',
+  X: 'bg-slate-100 text-slate-800 border-slate-300',
 };
 
-/** Small label saying whether an item came from YouTube, Substack or the paste box. */
+/** Small label saying whether an item came from YouTube, Substack, X or the paste box. */
 function KindBadge({ kind }: { kind: ItemKind }) {
   return (
     <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border shrink-0 ${KIND_STYLES[kind]}`}>{kind}</span>

@@ -82,6 +82,9 @@ export async function initDb(db: Client): Promise<void> {
     // Hotlinked profile picture, refreshed weekly by the fetch run (lib/avatars).
     'ALTER TABLE channels ADD COLUMN avatar_url TEXT',
     'ALTER TABLE channels ADD COLUMN avatar_checked_at TEXT',
+    // X posts only: when ticker extraction last finished for the item. A post
+    // naming no ticker has no mentions, so mention count can't say it's done.
+    'ALTER TABLE videos ADD COLUMN extracted_at TEXT',
   ]) {
     try {
       await db.execute(stmt);
@@ -148,6 +151,41 @@ export async function initDb(db: Client): Promise<void> {
       level   INTEGER NOT NULL,
       sent_at TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (month, level)
+    );
+
+    -- One-time setup links (RAY-16). Only a SHA-256 of the key is kept, so
+    -- a copy of the database can't be turned back into a working link.
+    CREATE TABLE IF NOT EXISTS setup_links (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      purpose    TEXT NOT NULL,
+      key_hash   TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at    TEXT
+    );
+
+    -- The X bearer token, AES-256-GCM encrypted. One row, id = 1.
+    CREATE TABLE IF NOT EXISTS x_settings (
+      id               INTEGER PRIMARY KEY CHECK (id = 1),
+      token_ciphertext TEXT NOT NULL,
+      token_iv         TEXT NOT NULL,
+      token_tag        TEXT NOT NULL,
+      token_last4      TEXT NOT NULL,
+      updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- X accounts to follow. Each also has a channels row (channel_id
+    -- 'x-<user_id>') so the Sources page, switches, alerts and cards treat it
+    -- like any other source. since_id is the newest post already read.
+    CREATE TABLE IF NOT EXISTS x_accounts (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    TEXT NOT NULL UNIQUE,
+      handle     TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      avatar_url TEXT,
+      enabled    INTEGER NOT NULL DEFAULT 1,
+      since_id   TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
 

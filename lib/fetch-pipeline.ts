@@ -8,6 +8,7 @@ import { resetUsage, getUsage, type RunUsage } from '@/lib/usage';
 import { getBudgetStatus } from '@/lib/claude';
 import { BudgetReachedError, type BudgetStatus } from '@/lib/budget';
 import { refreshAvatars } from '@/lib/avatars';
+import { runXSources, TIME_BUDGET_MESSAGE } from '@/lib/x-fetch';
 
 const MAX_TRANSCRIPT_ATTEMPTS = 3; // give up on a video after this many failed runs
 const TIME_BUDGET_MS = 240_000;    // stop gracefully before Vercel's 300s hard limit
@@ -69,7 +70,16 @@ function videoUrl(channel: Channel, videoId: string): string {
   return `https://youtube.com/watch?v=${videoId}`;
 }
 
-export async function runFetch(): Promise<FetchResult> {
+export interface RunFetchOptions {
+  /**
+   * Skip CHANNELS and pull only X accounts — just these user ids when given.
+   * Used right after /setup/x saves, so the first posts arrive in minutes
+   * rather than at the next scheduled run.
+   */
+  xOnly?: boolean | { userIds: string[] };
+}
+
+export async function runFetch(options: RunFetchOptions = {}): Promise<FetchResult> {
   const db = await getDb();
   const errors: string[] = [];
   let videosProcessed = 0;
@@ -100,7 +110,7 @@ export async function runFetch(): Promise<FetchResult> {
     return !budgetReached;
   };
 
-  for (const channel of CHANNELS) {
+  for (const channel of options.xOnly ? [] : CHANNELS) {
     if (timedOut) break;
     // Keep the row current either way, so a switched-off channel still shows
     // up in the UI with its toggle intact.
@@ -169,7 +179,7 @@ export async function runFetch(): Promise<FetchResult> {
     for (const video of videos) {
       if (Date.now() > deadline) {
         timedOut = true;
-        errors.push('time budget reached — stopping early; run again to continue');
+        errors.push(TIME_BUDGET_MESSAGE);
         console.log('Time budget reached, stopping early.');
         break;
       }
@@ -319,10 +329,25 @@ export async function runFetch(): Promise<FetchResult> {
     await recordRun(true);
   }
 
+  // X accounts (RAY-16) live in the database rather than CHANNELS. Same
+  // deadline, budget and error list, and the same source_runs rows.
+  if (!timedOut) {
+    const x = await runXSources({
+      db, deadline, disabled, errors, checkBudget, noteBudgetReached,
+      onlyUserIds: typeof options.xOnly === 'object' ? options.xOnly.userIds : undefined,
+    });
+    timedOut = x.timedOut;
+    videosProcessed += x.processed;
+    tickersFound += x.tickersFound;
+    newVideos.push(...x.newVideos);
+    skippedChannels.push(...x.skippedChannels);
+  }
+
   // Profile pictures for the Commentators cards. Weekly per channel, switched-off
   // ones included (they still get a card), and it swallows its own failures.
-  // Skipped on a timed-out run so the time left goes to items.
-  if (!timedOut) await refreshAvatars(db, CHANNELS);
+  // Skipped on a timed-out run so the time left goes to items. X avatars come
+  // with the account lookup on /setup/x, so they aren't refreshed here.
+  if (!timedOut && !options.xOnly) await refreshAvatars(db, CHANNELS);
 
   // Detect new convergences and save alerts
   const newAlerts: string[] = [];

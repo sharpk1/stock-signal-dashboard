@@ -4,7 +4,7 @@ import type { Channel } from '@/lib/channels';
 export interface Commentator {
   channelId: string;
   name: string;
-  source: 'youtube' | 'substack';
+  source: 'youtube' | 'substack' | 'x';
   /** Items published inside the window. */
   pieces: number;
   /** Most-mentioned tickers in the window; `count` is items mentioning it. */
@@ -73,7 +73,7 @@ export function buildCommentators(
     .map(ch => ({
       channelId: ch.channelId,
       name: ch.name,
-      source: ch.source === 'substack' ? 'substack' as const : 'youtube' as const,
+      source: ch.source ?? 'youtube',
       pieces: pieces.get(ch.channelId) ?? 0,
       topTickers: top.get(ch.channelId) ?? [],
       enabled: !disabled.has(ch.channelId),
@@ -82,10 +82,10 @@ export function buildCommentators(
     .sort((a, b) => b.pieces - a.pieces);
 }
 
-/** "YouTube · 28 pieces", "Substack · 1 post", "YouTube · nothing new", "… · Paused". */
+/** "YouTube · 28 pieces", "Substack · 1 post", "X · 12 posts", "YouTube · nothing new", "… · Paused". */
 export function commentatorMeta(c: Pick<Commentator, 'source' | 'pieces' | 'enabled'>): string {
-  const label = c.source === 'substack' ? 'Substack' : 'YouTube';
-  const noun = c.source === 'substack' ? 'post' : 'piece';
+  const label = c.source === 'substack' ? 'Substack' : c.source === 'x' ? 'X' : 'YouTube';
+  const noun = c.source === 'youtube' ? 'piece' : 'post';
   const parts = [label];
   if (c.pieces > 0) parts.push(`${c.pieces} ${noun}${c.pieces === 1 ? '' : 's'}`);
   else if (c.enabled) parts.push('nothing new');
