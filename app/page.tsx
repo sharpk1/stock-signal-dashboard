@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import React from 'react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
@@ -18,6 +18,42 @@ import { PasswordProtection } from '@/app/components/PasswordProtection';
 import { TranscriptPanel } from '@/app/components/TranscriptPanel';
 import { filterItems, availableSources, isFilterActive, DIRECTIONS, DIRECTION_LABELS,
          EMPTY_FILTER, type ItemFilter, type Direction } from '@/lib/filters';
+import { sortLeaderboard, nextSort, ariaSort, loadSort, saveSort,
+         SORT_COLUMN_LABELS, type SortColumn, type LeaderboardSort } from '@/lib/leaderboard-sort';
+
+/**
+ * A leaderboard column header you can sort by. A real button so it takes focus
+ * and fires on Enter or Space; the arrow is hidden from assistive tech because
+ * the cell's aria-sort already says which way the column runs. The arrow keeps
+ * its space when inactive so the header row does not jump on a click.
+ */
+function SortHeader({ column, sort, onSort, children }: {
+  column: SortColumn;
+  sort: LeaderboardSort;
+  onSort: (column: SortColumn) => void;
+  children?: React.ReactNode;
+}) {
+  const active = sort.column === column;
+  const label = SORT_COLUMN_LABELS[column];
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column)}
+      title={active
+        ? `Sorted by ${label.toLowerCase()}, ${sort.direction === 'desc' ? 'highest' : 'lowest'} first — click to reverse`
+        : `Sort by ${label.toLowerCase()}`}
+      className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider rounded cursor-pointer transition-colors
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1
+        ${active ? 'text-gray-900' : 'text-gray-500 hover:text-blue-600'}`}
+    >
+      {label}
+      {children}
+      <span aria-hidden="true" className={`text-[9px] leading-none ${active ? 'text-blue-600' : 'text-transparent'}`}>
+        {active && sort.direction === 'asc' ? '▲' : '▼'}
+      </span>
+    </button>
+  );
+}
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
   const styles: Record<string, string> = {
@@ -211,6 +247,9 @@ export default function Page() {
   const [digestExpanded, setDigestExpanded] = useState<string | null>(null);
   const [digestFilter, setDigestFilter] = useState<ItemFilter>(EMPTY_FILTER);
   const [leaderboardDays, setLeaderboardDays] = useState<7 | 14 | 30>(7);
+  // RAY-25. Safe to read storage here: PasswordProtection only renders this
+  // page in the browser. A bad or missing value just means the default.
+  const [leaderboardSort, setLeaderboardSort] = useState<LeaderboardSort>(() => loadSort());
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteType, setPasteType] = useState<PasteType>('alpha-report');
   const [pasteDate, setPasteDate] = useState(todayIso());
@@ -344,6 +383,19 @@ export default function Page() {
 
   const digestSources = availableSources(digest);
   const visibleDigest = filterItems(digest, digestFilter);
+
+  // The rows are already here, so a column click is a re-sort, not a refetch —
+  // which is also why the choice survives a change of 7d/14d/30d window.
+  const sortedEntries = useMemo(
+    () => sortLeaderboard(entries, leaderboardSort),
+    [entries, leaderboardSort],
+  );
+
+  function applyLeaderboardSort(column: SortColumn) {
+    const next = nextSort(leaderboardSort, column);
+    setLeaderboardSort(next);
+    saveSort(next);
+  }
 
   function topSentiment(entry: LeaderboardEntry): string {
     if (!entry.details.length) return 'neutral';
@@ -721,27 +773,32 @@ export default function Page() {
         ) : (
           <div className="rounded-xl border border-gray-200 overflow-hidden shadow-sm bg-white">
             {/* Table header */}
-            <div className="grid grid-cols-[28px_2fr_2.5fr_1fr_1fr_1fr_1.5fr] text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3 bg-gray-50 border-b border-gray-200">
-              <span>#</span>
-              <span>Ticker</span>
-              <span>Company</span>
-              <span className="text-center">Channels</span>
-              <span className="text-center">Mentions</span>
-              <span className="relative group flex items-center justify-center gap-1 cursor-default">
-                Score
-                <span className="text-gray-400 text-[10px]">ⓘ</span>
+            <div role="row" className="grid grid-cols-[28px_2fr_2.5fr_1fr_1fr_1fr_1.5fr] text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3 bg-gray-50 border-b border-gray-200">
+              <span role="columnheader">#</span>
+              <span role="columnheader">Ticker</span>
+              <span role="columnheader">Company</span>
+              <span role="columnheader" aria-sort={ariaSort(leaderboardSort, 'channels')} className="flex items-center justify-center">
+                <SortHeader column="channels" sort={leaderboardSort} onSort={applyLeaderboardSort} />
+              </span>
+              <span role="columnheader" aria-sort={ariaSort(leaderboardSort, 'mentions')} className="flex items-center justify-center">
+                <SortHeader column="mentions" sort={leaderboardSort} onSort={applyLeaderboardSort} />
+              </span>
+              <span role="columnheader" aria-sort={ariaSort(leaderboardSort, 'score')} className="relative group flex items-center justify-center">
+                <SortHeader column="score" sort={leaderboardSort} onSort={applyLeaderboardSort}>
+                  <span className="text-gray-400 text-[10px]">ⓘ</span>
+                </SortHeader>
                 <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-64 bg-gray-900 text-white text-xs rounded-lg px-3 py-2.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg normal-case tracking-normal font-normal text-left leading-relaxed">
                   <p className="font-semibold mb-1">How score is calculated</p>
                   <p className="text-gray-300">Average conviction score across all mentions of this stock in the last 24h.</p>
                   <p className="text-gray-400 mt-1.5">Conviction is 0–100% based on position size, price targets, certainty language, and depth of analysis.</p>
                 </div>
               </span>
-              <span>Sentiment</span>
+              <span role="columnheader">Sentiment</span>
             </div>
 
             {/* Rows */}
             <div className="divide-y divide-gray-100">
-              {entries.map((entry, index) => {
+              {sortedEntries.map((entry, index) => {
                 const isExpanded = expanded === entry.ticker;
                 const sentiment = topSentiment(entry);
 
