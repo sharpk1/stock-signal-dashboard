@@ -66,12 +66,11 @@ export async function fetchSubstackPosts(handle: string): Promise<SubstackPost[]
   }
   if (!res.ok) throw new Error(`Substack API failed for ${handle}: ${res.status}`);
 
-  const posts = (await res.json()) as Array<{
-    slug: string;
-    title: string;
-    post_date: string;
-    body_html: string;
-  }>;
+  type RawPost = { slug: string; title: string; post_date: string; body_html: string };
+  // Substack used to answer with a bare array; since Oct 30 2026 it wraps it as
+  // { posts, nextCursor }. Accept both.
+  const body = (await res.json()) as RawPost[] | { posts?: RawPost[] };
+  const posts = Array.isArray(body) ? body : body?.posts;
 
   if (!Array.isArray(posts)) throw new Error(`Unexpected response shape from Substack API for ${handle}`);
 
